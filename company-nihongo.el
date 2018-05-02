@@ -250,13 +250,7 @@ PREFIX."
            ;; If prefix is "Vi" and cand is "Vimプロフェッショナル",
            ;; for example, then we also want to collect "Vim"
            ;; as a candidate.
-           (push (match-string-no-properties 1 cand) tail-candidates))
-         (when (and (string-match-p "[_-]" cand)
-                    (setq lst (split-string cand "[_-]" t))
-                    (> (length (car lst)) prefix-len))
-           ;; If prefix=ab and cand is "abc-def", we make "abc" a
-           ;; candidate as well.
-           (push (car lst) tail-candidates)))
+           (push (match-string-no-properties 1 cand) tail-candidates)))
        table)
       (if candidates
           ;; Found candidates and we clear not-found-state.
