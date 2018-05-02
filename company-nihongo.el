@@ -463,3 +463,12 @@ current buffer."
        (company-nihongo--get-prefix))
       (candidates
        (company-nihongo--get-candidates arg))))
+
+(provide 'company-nihongo)
+
+;; Local Variables:
+;; coding: utf-8
+;; indent-tabs-mode: nil
+;; End:
+
+;; company-nihongo.el ends here.
