@@ -28,7 +28,7 @@
 
 ;;; Customization
 
-(defcustom company-nihongo-limit 20
+(defcustom company-nihongo-limit 50
   "The upper number of candidates to show when completing."
   :type 'number
   :group 'company-nihongo)
@@ -252,7 +252,8 @@ PREFIX."
            ;; as a candidate.
            (push (match-string-no-properties 1 cand) tail-candidates))
          (when (and (string-match-p "[_-]" cand)
-                    (setq lst (split-string cand "[_-]" t)))
+                    (setq lst (split-string cand "[_-]" t))
+                    (> (length (car lst)) prefix-len))
            ;; If prefix=ab and cand is "abc-def", we make "abc" a
            ;; candidate as well.
            (push (car lst) tail-candidates)))
@@ -462,7 +463,8 @@ current buffer."
       (prefix
        (company-nihongo--get-prefix))
       (candidates
-       (company-nihongo--get-candidates arg))))
+       (company-nihongo--get-candidates arg))
+      (sorted t)))
 
 (provide 'company-nihongo)
 
