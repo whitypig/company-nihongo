@@ -233,15 +233,7 @@ PREFIX."
          (when (string-match
                 (format "\\(%s+\\)%s+"
                         prefix-regexp
-                        (cond
-                         ((string-match-p "\\\\c" prefix-regexp)
-                          ;; "\\cH" or "\\cK" or "\\cC".
-                          (replace-regexp-in-string "\\\\c" "\\\\C" prefix-regexp))
-                         (t
-                          (format "[^%s]"
-                                  (replace-regexp-in-string "\\[\\|\\]"
-                                                            ""
-                                                            prefix-regexp)))))
+                        (company-nihongo--make-negate-regexp prefix-regexp))
                 cand)
            ;; cand contains different characters other than
            ;; prefix-regexp-matching ones. Extract
@@ -283,13 +275,21 @@ BUFFER."
        (t
         t))))))
 
+(defun company-nihongo--make-negate-regexp (regexp)
+  "Return regexp that does not match regexp REGEXP."
+  (cond
+   ((string-match-p "^\\\\c" regexp)
+    (replace-regexp-in-string "^\\\\c" "\\\\C" regexp))
+   (t
+    (format "[^%s]" (replace-regexp-in-string "\\[\\|\\]" "" regexp)))))
+
 (defun company-nihongo--make-regexp (prefix)
   "Make regexp to be used in
 `company-nihongo--get-candidates-in-current-buffer' and returns a cons
 cell, whose car is the type of character that represents prefix, and
 cdr is also a regexp used to search for candidates. The first group in
 regexp in this cdr is colleted as a candidate."
-  (let ((non-prefix "\\(?:[^%s]\\|\\b\\)"))
+  (let ((non-prefix "\\(?:%s\\|\\b\\)"))
     (cond
      ((string-match-p (format "^%s+$" company-nihongo-ascii-regexp) prefix)
       ;; (posix-search-forward "\\(あいう[あ-ん]*\\(?:[a-z]*\\|\\cC*\\)\\)")
@@ -302,26 +302,29 @@ regexp in this cdr is colleted as a candidate."
       (cons company-nihongo-ascii-regexp
             (format "%s\\(%s%s*\\(?:\\cK*\\|\\cC*\\|\\cH*\\)\\)"
                     ;; non-prefix
-                    (format non-prefix (replace-regexp-in-string
-                                        ;; Strip enclosing square brackets.
-                                        "\\[\\|\\]" "" company-nihongo-ascii-regexp))
+                    (format non-prefix
+                            (company-nihongo--make-negate-regexp
+                             company-nihongo-ascii-regexp))
                     prefix
                     company-nihongo-ascii-regexp)))
      ((string-match-p "^\\cH+$" prefix)
       ;; "hiragana" or "hiragan + kanji" or "hiragana + alphabet"
       (cons "\\cH" (format "%s\\(%s\\cH*\\(?:\\cC*\\|%s*\\)\\)"
-                           (format non-prefix "\\cH")
+                           (format non-prefix
+                                   (company-nihongo--make-negate-regexp "\\cH"))
                            prefix
                            company-nihongo-alpha-regexp)))
      ((string-match-p "^\\cK+$" prefix)
       ;; "katakana" or "katakana + hiragana" or "katakana + kanji"
       (cons "\\cK" (format "%s\\(%s\\cK*\\(?:\\cH*\\|\\cC*\\)\\)"
-                           (format non-prefix "\\cK")
+                           (format non-prefix
+                                   (company-nihongo--make-negate-regexp "\\cK"))
                            prefix)))
      ((string-match-p "^\\cC+$" prefix)
       ;; "kanji" or "kanji + hiragana or "kanji + katakana"
       (cons "\\cC" (format "%s\\(%s\\cC*\\(?:\\cH*\\|\\cK*\\)\\)"
-                           (format non-prefix "\\cC")
+                           (format non-prefix
+                                   (company-nihongo--make-negate-regexp "\\cC"))
                            prefix)))
      (t
       nil))))
