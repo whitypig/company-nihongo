@@ -319,8 +319,8 @@ regexp in this cdr is colleted as a candidate."
                            (format non-prefix "\\cK")
                            prefix)))
      ((string-match-p "^\\cC+$" prefix)
-      ;; "kanji" or "kanji + hiragana"
-      (cons "\\cC" (format "%s\\(%s\\cC*\\cH*\\)"
+      ;; "kanji" or "kanji + hiragana or "kanji + katakana"
+      (cons "\\cC" (format "%s\\(%s\\cC*\\(?:\\cH*\\|\\cK*\\)\\)"
                            (format non-prefix "\\cC")
                            prefix)))
      (t
@@ -429,7 +429,8 @@ would-be candidates."
           (string-match-p "\\cC+" next)))
      ((string-match-p "\\cC+" curr)
       ;; "kanji" + X
-      (or (string-match-p "\\cH+" next))))))
+      (or (string-match-p "\\cH+" next)
+          (string-match-p "\\cK+" next))))))
 
 (defun company-nihongo--split-buffer-string (buffer)
   "Return a list of hiragana words, katakana words and kanji words in
