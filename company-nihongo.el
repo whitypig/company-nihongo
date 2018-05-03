@@ -35,14 +35,14 @@
 
 (defcustom company-nihongo-separator-regexp "[[:ascii:]、。・「」：？…（）\n\t]"
   "Default separator to split string in buffers. Characters in
-  this regexp are excluded from candidates."
+this regexp are excluded from candidates."
   :type 'regexp
   :group 'company-nihongo)
 
 (defcustom company-nihongo-select-buffer-function
   #'company-nihongo-select-target-mode-buffers
   "A function that returns a list of buffers. Those buffers are
-  searched for candidates."
+searched for candidates."
   :type 'symbol
   :group 'company-nihongo)
 
@@ -89,7 +89,7 @@ find candidates.")
 
 ;;; Functions
 
-(defun company-nihongo--select-target-mode-buffers ()
+(defun company-nihongo-select-target-mode-buffers ()
   "Return buffers that have the same major mode as that of current
 buffer."
   (let ((target-major-modes (or (cl-find-if
@@ -449,7 +449,7 @@ current buffer."
                                 (split-string word "[_-]" t))))))
     (nreverse ret)))
 
-(defun company-nihongo-backend (command &optional arg &rest _ignores)
+(defun company-nihongo (command &optional arg &rest _ignores)
   (interactive (list 'interactive))
   (cl-case command
       (interactive
