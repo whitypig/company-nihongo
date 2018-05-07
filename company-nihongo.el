@@ -28,6 +28,10 @@
 
 ;;; Customization
 
+(defgroup company-nihongo nil
+  "Company-mode backend for completing nihongo."
+  :group 'company-nihongo)
+
 (defcustom company-nihongo-limit 50
   "The upper number of candidates to show when completing."
   :type 'number
