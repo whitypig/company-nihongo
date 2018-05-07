@@ -62,6 +62,11 @@ searched for candidates."
   :type 'regexp
   :group 'company-nihongo)
 
+(defcustom company-nihongo-complete-katakana-by-hiragana t
+  "Specifies whether to complete katakana words by hiragana prefix."
+  :type 'boolean
+  :group 'company-nihongo)
+
 
 ;;; Variables
 
@@ -193,11 +198,28 @@ of `char-before'."
     ;; Reset hashtable for current buffer.
     (and (assoc buf company-nihongo--index-cache-alist)
          (assq-delete-all buf company-nihongo--index-cache-alist))
-    (company-nihongo--get-candidates-in-current-buffer prefix))
+    (company-nihongo--get-candidates-2
+     :func #'company-nihongo--get-candidates-in-current-buffer
+     :prefix prefix))
    (t
-    (company-nihongo--get-candidates-in-other-buffer prefix buf))))
+    (company-nihongo--get-candidates-2
+     :func #'company-nihongo--get-candidates-in-other-buffer
+     :prefix prefix
+     :buffer buf))))
 
-(defun company-nihongo--get-candidates-in-current-buffer (prefix)
+(cl-defun company-nihongo--get-candidates-2 (&key func prefix buffer)
+  (cond
+   ((and company-nihongo-complete-katakana-by-hiragana
+         (string-match-p "\\cH" prefix))
+    ;; When PREFIX is hiragan word, we also try to search for katakana
+    ;; word candidates if
+    ;; `company-nihongo-complete-katakana-by-hiragana' is t.
+    (nconc (funcall func prefix buffer)
+           (funcall func (japanese-katakana prefix) buffer)))
+   (t
+    (funcall func prefix buffer))))
+
+(defun company-nihongo--get-candidates-in-current-buffer (prefix &rest _ignored)
   "Return a list of candidates in current buffer that begin with
 PREFIX."
   (let* ((limit (or (and (integerp company-nihongo-limit) company-nihongo-limit)
@@ -270,11 +292,15 @@ BUFFER."
         t)
        ((not (eq buffer not-found-buffer))
         t)
+       ((and (stringp not-found-prefix)
+             (not (string-prefix-p not-found-prefix prefix)))
+        ;; If prefix has completely changed, we need to search for candidates.
+        t)
        ((and (eq buffer not-found-buffer) (eq (buffer-chars-modified-tick) tick))
         nil)
-       ((and (stringp not-found-prefix) (string-match-p (concat "^" not-found-prefix) prefix))
-        ;; If buffer hasn't changed and PREFIX contains
-        ;; not-found-prefix, we don't have to do search.
+       ((and (stringp not-found-prefix) (string-prefix-p not-found-prefix prefix))
+        ;; If buffer hasn't changed and not-found-prefix is prefix of
+        ;; PREFIX, we don't have to do search.
         nil)
        (t
         t))))))
