@@ -67,6 +67,10 @@ searched for candidates."
   :type 'boolean
   :group 'company-nihongo)
 
+(defcustom company-nihongo-candidate-sorter #'string<
+  "Compare function used when sorting candidates."
+  :type 'function
+  :group 'company-nihongo)
 
 ;;; Variables
 
@@ -97,6 +101,28 @@ find candidates.")
 
 
 ;;; Functions
+
+(defun company-nihongo-compare-candidates (a b)
+  (let ((a-is-kanji (string-match-p "\\cC+" a))
+        (b-is-kanji (string-match-p "\\cC+" b))
+        (a-is-ascii (string-match-p company-nihongo-ascii-regexp a))
+        (b-is-ascii (string-match-p company-nihongo-ascii-regexp b)))
+    (cond
+     ;; ascii comes first, then comes kanji.
+     ;; ((and a-is-ascii b-is-ascii)
+     ;;  (string< a b))
+     ;; (a-is-ascii
+     ;;  t)
+     ;; (b-is-ascii
+     ;;  nil)
+     ((and a-is-kanji b-is-kanji)
+      (string< a b))
+     (a-is-kanji
+      t)
+     (b-is-kanji
+      nil)
+     (t
+      (string< a b)))))
 
 (defun company-nihongo-select-target-mode-buffers ()
   "Return buffers that have the same major mode as that of current
@@ -189,7 +215,7 @@ of `char-before'."
                               (> (length candidates) company-nihongo-limit))
                     return candidates
                     finally return candidates)
-           #'string<))))
+           company-nihongo-candidate-sorter))))
 
 (defun company-nihongo--get-candidates-1 (prefix buf)
   "Return a list of candidates that begin with PREFIX in buffer BUF."
