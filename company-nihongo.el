@@ -330,7 +330,7 @@ regexp in this cdr is colleted as a candidate."
       ;; あいうえお漢字
       ;; "ascii" or "ascii + katakana" or "ascii + kanji".
       (cons company-nihongo-ascii-regexp
-            (format "%s\\(%s%s*\\(?:\\cK*\\|\\cC*\\|\\cH*\\)\\)"
+            (format "%s\\(%s%s*\\(?:\\cK*\\|\\cC*\\)\\)"
                     ;; non-prefix
                     (format non-prefix
                             (company-nihongo--make-negate-regexp
@@ -450,8 +450,7 @@ would-be candidates."
      ((string-match-p (format "%s+" company-nihongo-ascii-regexp) curr)
       ;; "ascii" + X
       (or (string-match-p "\\cK+" next)
-          (string-match-p "\\cC+" next)
-          (string-match-p "\\cH+" next)))
+          (string-match-p "\\cC+" next)))
      ((string-match-p "\\cH+" curr)
       ;; "hiragana" + X
       (or (string-match-p "\\cC+" next)
