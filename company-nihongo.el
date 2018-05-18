@@ -5,7 +5,7 @@
 ;; Author: whitypig <whitypig@gmail.com>
 ;; URL:
 ;; Version: 0.01
-;; Package-Requires: ((company-mode) (cl-lib))
+;; Package-Requires: ((company-mode) (cl-lib) (s))
 ;; Keywords: completion
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -25,6 +25,7 @@
 
 (require 'company)
 (require 'cl-lib)
+(require 's)
 
 ;;; Customization
 
@@ -103,26 +104,46 @@ find candidates.")
 ;;; Functions
 
 (defun company-nihongo-compare-candidates (a b)
-  (let ((a-is-kanji (string-match-p "\\cC+" a))
-        (b-is-kanji (string-match-p "\\cC+" b))
-        (a-is-ascii (string-match-p company-nihongo-ascii-regexp a))
-        (b-is-ascii (string-match-p company-nihongo-ascii-regexp b)))
+  (let ((a-ix (string-match-p "\\cC" a))
+        (b-ix (string-match-p "\\cC" b)))
     (cond
-     ;; ascii comes first, then comes kanji.
-     ;; ((and a-is-ascii b-is-ascii)
-     ;;  (string< a b))
-     ;; (a-is-ascii
-     ;;  t)
-     ;; (b-is-ascii
-     ;;  nil)
-     ((and a-is-kanji b-is-kanji)
-      (string< a b))
-     (a-is-kanji
+     ((and a-ix b-ix)
+      (if (= a-ix b-ix)
+          ;; If the indices of first occurrence of kanji are the same,
+          ;; we let how many kanji character a string has be a
+          ;; tie-breaker.
+          (> (s-count-matches "\\cC" a) (s-count-matches "\\cC" b))
+        ;; word that has kanji at smaller index comes first, that is,
+        ;; "あい漢字" comes before "あいう漢字"
+        (< a-ix b-ix)))
+     (a-ix
       t)
-     (b-is-kanji
+     (b-ix
       nil)
      (t
       (string< a b)))))
+
+;; (defun company-nihongo-compare-candidates (a b)
+;;   (let ((a-is-kanji (string-match-p "\\cC+" a))
+;;         (b-is-kanji (string-match-p "\\cC+" b))
+;;         (a-is-ascii (string-match-p company-nihongo-ascii-regexp a))
+;;         (b-is-ascii (string-match-p company-nihongo-ascii-regexp b)))
+;;     (cond
+;;      ;; ascii comes first, then comes kanji.
+;;      ;; ((and a-is-ascii b-is-ascii)
+;;      ;;  (string< a b))
+;;      ;; (a-is-ascii
+;;      ;;  t)
+;;      ;; (b-is-ascii
+;;      ;;  nil)
+;;      ((and a-is-kanji b-is-kanji)
+;;       (string< a b))
+;;      (a-is-kanji
+;;       t)
+;;      (b-is-kanji
+;;       nil)
+;;      (t
+;;       (string< a b)))))
 
 (defun company-nihongo-select-target-mode-buffers ()
   "Return buffers that have the same major mode as that of current
@@ -140,30 +161,33 @@ buffer."
 (defun company-nihongo--get-regexp ()
   "Return regexp to be used to determine prefix depending on the type
 of `char-before'."
-  (let* ((ch (char-to-string (char-before)))
-         ;; Bug: When at the bob, char-before above signals error.
-         (anomaly-characters "ー〜")
-         (anomaly-regexp (format "[%s]" anomaly-characters)))
-    (cond
-     ;; ascii-word constituent characters
-     ((string-match-p (format "%s" company-nihongo-ascii-regexp) ch)
-      company-nihongo-ascii-regexp)
-     ((string-match-p anomaly-regexp ch)
-      ;; Special case:
-      ;; When ch is "～" or "ー", both hiraganra and katakana will be
-      ;; correct as regexp, so we will look back for another
-      ;; character.
+  (cond
+   ((bobp) nil)
+   (t
+    (let* ((ch (char-to-string (char-before)))
+           ;; Bug: When at the bob, char-before above signals error.
+           (anomaly-characters "ー〜")
+           (anomaly-regexp (format "[%s]" anomaly-characters)))
       (cond
-       ((save-excursion
-          (and (re-search-backward (format "[^%s]" anomaly-characters) nil t)
-               (setq ch (char-to-string (char-after)))))
-        ;; We found a character other than "ー" or "〜".
-        (company-nihongo--get-regexp-1 ch))
+       ;; ascii-word constituent characters
+       ((string-match-p (format "%s" company-nihongo-ascii-regexp) ch)
+        company-nihongo-ascii-regexp)
+       ((string-match-p anomaly-regexp ch)
+        ;; Special case:
+        ;; When ch is "～" or "ー", both hiraganra and katakana will be
+        ;; correct as regexp, so we will look back for another
+        ;; character.
+        (cond
+         ((save-excursion
+            (and (re-search-backward (format "[^%s]" anomaly-characters) nil t)
+                 (setq ch (char-to-string (char-after)))))
+          ;; We found a character other than "ー" or "〜".
+          (company-nihongo--get-regexp-1 ch))
+         (t
+          ;; Return hiragana as a fallback case.
+          "\\cH")))
        (t
-        ;; Return hiragana as a fallback case.
-        "\\cH")))
-     (t
-      (company-nihongo--get-regexp-1 ch)))))
+        (company-nihongo--get-regexp-1 ch)))))))
 
 (defun company-nihongo--get-regexp-1 (ch)
   (cond
@@ -258,7 +282,7 @@ PREFIX."
          (table (make-hash-table :test #'equal))
          (pos (point))
          (candidates nil)
-         (tail-candidates nil)
+         (head-candidates nil)
          (prefix-len (length prefix))
          (lst nil))
     (cl-assert (and prefix-regexp cand-regexp))
@@ -294,14 +318,14 @@ PREFIX."
            ;; If prefix is "Vi" and cand is "Vimプロフェッショナル",
            ;; for example, then we also want to collect "Vim"
            ;; as a candidate.
-           (push (match-string-no-properties 1 cand) tail-candidates)))
+           (push (match-string-no-properties 1 cand) head-candidates)))
        table)
       (if candidates
           ;; Found candidates and we clear not-found-state.
           (company-nihongo--clear-not-found-state)
         ;; Found nothing and we set not-found-state
         (company-nihongo--set-not-found-state prefix (current-buffer)))
-      (append candidates tail-candidates))))
+      (append candidates head-candidates))))
 
 (defun company-nihongo--go-search-p (prefix buffer)
   "Return t if we should go searching for candidates in buffer
@@ -345,7 +369,7 @@ BUFFER."
 cell, whose car is the type of character that represents prefix, and
 cdr is also a regexp used to search for candidates. The first group in
 regexp in this cdr is colleted as a candidate."
-  (let ((non-prefix "\\(?:%s\\|\\b\\)"))
+  (let ((non-prefix "\\(?:%s\\|\\b\\|\\B\\)"))
     (cond
      ((string-match-p (format "^%s+$" company-nihongo-ascii-regexp) prefix)
       ;; (posix-search-forward "\\(あいう[あ-ん]*\\(?:[a-z]*\\|\\cC*\\)\\)")
@@ -364,19 +388,23 @@ regexp in this cdr is colleted as a candidate."
                     prefix
                     company-nihongo-ascii-regexp)))
      ((string-match-p "^\\cH+$" prefix)
+      ;; prefix is Hiragana.
       ;; "hiragana" or "hiragan + kanji" or "hiragana + alphabet"
-      (cons "\\cH" (format "%s\\(%s\\cH*\\(?:\\cC*\\|%s*\\)\\)"
-                           (format non-prefix
-                                   (company-nihongo--make-negate-regexp "\\cH"))
-                           prefix
-                           company-nihongo-alpha-regexp)))
+      (cons "\\cH"
+            (format "%s\\(%s\\cH*\\(?:\\cC*\\|%s*\\)\\)"
+                    (format non-prefix
+                            (company-nihongo--make-negate-regexp "\\cH"))
+                    prefix
+                    company-nihongo-alpha-regexp)))
      ((string-match-p "^\\cK+$" prefix)
+      ;; prefix is Katakana.
       ;; "katakana" or "katakana + hiragana" or "katakana + kanji"
       (cons "\\cK" (format "%s\\(%s\\cK*\\(?:\\cH*\\|\\cC*\\)\\)"
                            (format non-prefix
                                    (company-nihongo--make-negate-regexp "\\cK"))
                            prefix)))
      ((string-match-p "^\\cC+$" prefix)
+      ;; prefix is Kanji.
       ;; "kanji" or "kanji + hiragana or "kanji + katakana"
       (cons "\\cC" (format "%s\\(%s\\cC*\\(?:\\cH*\\|\\cK*\\)\\)"
                            (format non-prefix
@@ -518,6 +546,18 @@ current buffer."
       (candidates
        (company-nihongo--get-candidates arg))
       (sorted t)))
+
+(defun company-nihongo--test-make-regexp ()
+  (interactive)
+  (let ((regexp (company-nihongo--make-regexp "の"))
+        cands)
+    (with-temp-buffer
+      (insert "の院長就任")
+      (newline)
+      (insert "の病院")
+      (setq cands (company-nihongo--get-candidates-in-current-buffer "の")))
+    (cl-loop for cand in cands
+             do (message cand))))
 
 (provide 'company-nihongo)
 
