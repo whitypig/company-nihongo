@@ -292,16 +292,16 @@ PREFIX."
       ;; (message "DEBUG: in-current-buffer, prefix=%s, company-nihongo--not-found-prefix=%s" prefix company-nihongo--not-found-prefix)
       (company-nihongo--search-candidates-in-buffer cand-regexp
                                                     prefix-len
+                                                    (point-min)
                                                     (1- pos)
                                                     limit
-                                                    table
-                                                    #'posix-search-backward)
+                                                    table)
       (company-nihongo--search-candidates-in-buffer cand-regexp
                                                     prefix-len
                                                     (1+ pos)
+                                                    (point-max)
                                                     limit
-                                                    table
-                                                    #'posix-search-forward)
+                                                    table)
       ;; Collect candidates in table
       (maphash
        (lambda (cand v)
@@ -415,13 +415,17 @@ regexp in this cdr is colleted as a candidate."
      (t
       nil))))
 
-(defun company-nihongo--search-candidates-in-buffer (regexp min-len pos
-                                                     limit table search-func)
+(defun company-nihongo--search-candidates-in-buffer (regexp min-len beg end limit table)
+  "Search for regexp in the region [BEG, END] until it reaches END or
+the number of candidates found equals LIMIT."
   (let ((cand nil))
     (save-excursion
-      (ignore-errors (goto-char pos))
+      (goto-char beg)
       (while (and (< (hash-table-count table) limit)
-                  (funcall search-func regexp nil t))
+                  ;; Note: I don't know why but, we have to do (1+
+                  ;; end) here to collect a candidate that just ends
+                  ;; at (point-max)
+                  (posix-search-forward regexp (1+ end) t))
         (setq cand (match-string-no-properties 1))
         (when (< min-len (length cand))
           (puthash cand t table))))))

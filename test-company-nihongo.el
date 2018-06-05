@@ -20,7 +20,7 @@
               (sort '("ノ" "ノ" "ノ" "ノ" "ノうえお" "ノかきく" "ノ南側" "ノ西側") #'string<))))
     ;; prefix is "ト"
     (with-temp-buffer
-      (insert "まさかのストレス")
+      (insert "ストレス")
       (should
        (equal (sort (company-nihongo--get-candidates-in-current-buffer "ス") #'string<)
               (sort '("ストレス") #'string<))))))
