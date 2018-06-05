@@ -369,7 +369,9 @@ BUFFER."
 cell, whose car is the type of character that represents prefix, and
 cdr is also a regexp used to search for candidates. The first group in
 regexp in this cdr is colleted as a candidate."
-  (let ((non-prefix "\\(?:%s\\|\\b\\|\\B\\)"))
+  (let ((non-prefix "\\(?:%s\\|\\b\\|\\B\\)")
+        ;; (non-prefix "\\(?:%s\\|\\b\\)")
+        )
     (cond
      ((string-match-p (format "^%s+$" company-nihongo-ascii-regexp) prefix)
       ;; (posix-search-forward "\\(あいう[あ-ん]*\\(?:[a-z]*\\|\\cC*\\)\\)")
@@ -546,18 +548,6 @@ current buffer."
       (candidates
        (company-nihongo--get-candidates arg))
       (sorted t)))
-
-(defun company-nihongo--test-make-regexp ()
-  (interactive)
-  (let ((regexp (company-nihongo--make-regexp "の"))
-        cands)
-    (with-temp-buffer
-      (insert "の院長就任")
-      (newline)
-      (insert "の病院")
-      (setq cands (company-nihongo--get-candidates-in-current-buffer "の")))
-    (cl-loop for cand in cands
-             do (message cand))))
 
 (provide 'company-nihongo)
 
