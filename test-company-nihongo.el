@@ -23,4 +23,10 @@
       (insert "ストレス")
       (should
        (equal (sort (company-nihongo--get-candidates-in-current-buffer "ス") #'string<)
-              (sort '("ストレス") #'string<))))))
+              (sort '("ストレス") #'string<))))
+
+    (with-temp-buffer
+      (insert "ジェヒョン")
+      (should
+       (equal (sort (company-nihongo--get-candidates-in-current-buffer "ジ") #'string<)
+              (sort '("ジェヒョン") #'string<))))))

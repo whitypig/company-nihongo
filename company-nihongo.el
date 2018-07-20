@@ -63,6 +63,11 @@ searched for candidates."
   :type 'regexp
   :group 'company-nihongo)
 
+(defcustom company-nihongo-punctuations "[。、]"
+  "Punctuation marks that split Japanese clauses."
+  :type 'regexp
+  :group 'company-nihongo)
+
 (defcustom company-nihongo-complete-katakana-by-hiragana t
   "Specifies whether to complete katakana words by hiragana prefix."
   :type 'boolean
@@ -499,12 +504,14 @@ would-be candidates."
            with ret = nil
            for curr in lst
            for next in (cdr lst)
+           unless (string-match-p curr company-nihongo-punctuations)
+           ;; If curr is not a punctuation
            do (progn (push curr ret)
-                     (when (company-nihongo--is-target-word curr next)
+                     (when (company-nihongo--is-connected-p curr next)
                        (push (concat curr next) ret)))
            finally return ret))
 
-(defun company-nihongo--is-target-word (curr next)
+(defun company-nihongo--is-connected-p (curr next)
   (when (and (stringp curr) (stringp next))
     (cond
      ((string-match-p (format "%s+" company-nihongo-ascii-regexp) curr)
@@ -528,7 +535,9 @@ would-be candidates."
   "Return a list of hiragana words, katakana words and kanji words in
 current buffer."
   (let ((ret nil)
-        (regexp (format "\\cH+\\|\\cK+\\|\\cC+\\|%s+" company-nihongo-ascii-regexp))
+        (regexp (format "\\cH+\\|\\cK+\\|\\cC+\\|%s+\\|%s"
+                        company-nihongo-ascii-regexp
+                        company-nihongo-punctuations))
         (word nil))
     (with-current-buffer buffer
       (save-excursion (goto-char (point-min))
