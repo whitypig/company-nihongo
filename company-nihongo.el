@@ -312,14 +312,14 @@ PREFIX."
        (lambda (cand v)
          (push cand candidates)
          (when (string-match
-                (format "\\(%s+\\)%s+"
+                (format "\\(%s\\{2,\\}\\)%s+"
                         prefix-regexp
                         (company-nihongo--make-negate-regexp prefix-regexp))
                 cand)
-           ;; cand contains different characters other than
-           ;; prefix-regexp-matching ones. Extract
-           ;; prefix-regexp-matching string part and put it
-           ;; into hash table.
+           ;; cand contains characters of different type other than
+           ;; that of prefix-regexp-matching. Extract
+           ;; prefix-regexp-matching string part if its length is more
+           ;; than 1 and put it into hash table.
            ;; If prefix is "Vi" and cand is "Vimプロフェッショナル",
            ;; for example, then we also want to collect "Vim"
            ;; as a candidate.
