@@ -38,7 +38,7 @@
   :type 'number
   :group 'company-nihongo)
 
-(defcustom company-nihongo-separator-regexp "[[:ascii:]、。・「」：？…（）\n\t]"
+(defcustom company-nihongo-separator-regexp "\\W+"
   "Default separator to split string in buffers. Characters in
 this regexp are excluded from candidates."
   :type 'regexp
@@ -63,10 +63,10 @@ searched for candidates."
   :type 'regexp
   :group 'company-nihongo)
 
-(defcustom company-nihongo-punctuations "[。、]"
-  "Punctuation marks that split Japanese clauses."
-  :type 'regexp
-  :group 'company-nihongo)
+;; (defcustom company-nihongo-punctuations "[。、]"
+;;   "Punctuation marks that split Japanese clauses."
+;;   :type 'regexp
+;;   :group 'company-nihongo)
 
 (defcustom company-nihongo-complete-katakana-by-hiragana t
   "Specifies whether to complete katakana words by hiragana prefix."
@@ -504,8 +504,9 @@ would-be candidates."
            with ret = nil
            for curr in lst
            for next in (cdr lst)
-           unless (string-match-p curr company-nihongo-punctuations)
-           ;; If curr is not a punctuation
+           unless (string-match-p (regexp-quote curr)
+                                  company-nihongo-separator-regexp)
+           ;; If curr is not a separator
            do (progn (push curr ret)
                      (when (company-nihongo--is-connected-p curr next)
                        (push (concat curr next) ret)))
@@ -532,19 +533,21 @@ would-be candidates."
           (string-match-p "\\cK+" next))))))
 
 (defun company-nihongo--split-buffer-string (buffer)
-  "Return a list of hiragana words, katakana words and kanji words in
-current buffer."
+  "Return a list of strings in buffer BUFFER, split by its character
+type."
   (let ((ret nil)
         (regexp (format "\\cH+\\|\\cK+\\|\\cC+\\|%s+\\|%s"
                         company-nihongo-ascii-regexp
-                        company-nihongo-punctuations))
+                        company-nihongo-separator-regexp))
         (word nil))
     (with-current-buffer buffer
       (save-excursion (goto-char (point-min))
                       (while (re-search-forward regexp nil t)
                         (setq word (match-string-no-properties 0))
                         (push word ret)
-                        (when (string-match-p company-nihongo-ascii-regexp word)
+                        (when (string-match-p
+                               (format "^%s+$" company-nihongo-ascii-regexp)
+                               word)
                           ;; If word is like "abc-def", then we push
                           ;; abc and def into ret as well.
                           (mapc (lambda (elt) (push elt ret))
