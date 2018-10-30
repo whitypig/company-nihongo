@@ -9,7 +9,8 @@
       (should
        (equal
         (sort (company-nihongo--get-candidates-in-current-buffer "の") #'string<)
-        lst)))
+        lst))
+      (company-nihongo--clear-tables-for-buffer (current-buffer)))
     ;; prefix is "ノ"
     (with-temp-buffer
       (insert "あいうノうえおノかきく。")
@@ -17,19 +18,22 @@
       (insert "これノ南側ノ西側。")
       (should
        (equal (sort (company-nihongo--get-candidates-in-current-buffer "ノ") #'string<)
-              (sort '("ノうえお" "ノかきく" "ノ南側" "ノ西側") #'string<))))
+              (sort '("ノうえお" "ノかきく" "ノ南側" "ノ西側") #'string<)))
+      (company-nihongo--clear-tables-for-buffer (current-buffer)))
     ;; prefix is "ト"
     (with-temp-buffer
       (insert "ストレス")
       (should
        (equal (sort (company-nihongo--get-candidates-in-current-buffer "ス") #'string<)
-              (sort '("ストレス") #'string<))))
+              (sort '("ストレス") #'string<)))
+      (company-nihongo--clear-tables-for-buffer (current-buffer)))
 
     (with-temp-buffer
       (insert "ジェヒョン")
       (should
        (equal (sort (company-nihongo--get-candidates-in-current-buffer "ジ") #'string<)
-              (sort '("ジェヒョン") #'string<))))
+              (sort '("ジェヒョン") #'string<)))
+      (company-nihongo--clear-tables-for-buffer (current-buffer)))
 
     ;; // たぶん違う。
     ;; // ボードは例えば以下のようになっているはずである。
@@ -56,7 +60,8 @@
        (equal (company-nihongo--get-candidates-in-current-buffer "う")
               '("うになっているはずである")))
       (should
-       (null (company-nihongo--get-candidates-in-current-buffer "する"))))))
+       (null (company-nihongo--get-candidates-in-current-buffer "する")))
+      (company-nihongo--clear-tables-for-buffer (current-buffer)))))
 
 (ert-deftest company-nihongo--test-split-buffer-string ()
   ""
@@ -76,4 +81,34 @@
       (should
        (eq (length ret) (length expeted)))
       (should
-       (equal ret expeted)))))
+       (equal ret expeted)))
+    (with-temp-buffer
+      (insert "新・用語辞典および旧・用語辞典")
+      (newline)
+      (insert "キャピタル・ゲイン")
+      (newline)
+      (setq ret (company-nihongo--split-buffer-string (current-buffer)))
+      (should
+       (equal
+        ret
+        '("新" "・" "用語辞典" "および" "旧" "・" "用語辞典" "
+" "キャピタル・ゲイン" "キャピタル" "ゲイン" "
+"))))))
+
+
+;; (cl-loop for word in (company-nihongo--get-word-list (current-buffer))
+;;          do (message "word=%s" word))
+
+(ert-deftest company-nihongo--test-get-word-list ()
+  (with-temp-buffer
+      (insert "新・用語辞典および旧・用語辞典")
+      (newline)
+      (insert "キャピタル・ゲイン")
+      (newline)
+      (setq ret (company-nihongo--get-word-list (current-buffer)))
+      (should
+       (equal
+        (sort ret #'string<)
+        (sort '("新" "用語辞典" "用語辞典および" "および" "および旧" "旧" "用語辞典"
+                "キャピタル・ゲイン" "キャピタル" "ゲイン")
+              #'string<)))))

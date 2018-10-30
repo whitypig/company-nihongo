@@ -33,7 +33,7 @@
   "Company-mode backend for completing nihongo."
   :group 'company-nihongo)
 
-(defcustom company-nihongo-limit 50
+(defcustom company-nihongo-limit 100
   "The upper number of candidates to show when completing."
   :type 'number
   :group 'company-nihongo)
@@ -78,6 +78,17 @@ searched for candidates."
   :type 'function
   :group 'company-nihongo)
 
+(defcustom company-nihongo-searching-window-size 1000
+  "The size of window in which candidates in current buffer are
+searched. In other words, searching for candidates in current buffer
+is perfomed on [point - window-size, point + window-size]."
+  :type 'integer
+  :group 'company-nihongo)
+
+;; (setq company-nihongo-searching-window-size 500)
+;; (setq company-nihongo-searching-window-size 1000)
+;; (setq company-nihongo-searching-window-size 2000)
+
 ;;; Variables
 
 (defvar company-nihongo--index-cache-alist nil
@@ -105,6 +116,12 @@ search found something.")
   "The buffer in which the last search was performed and it failed to
 find candidates.")
 
+(defvar company-nihongo--last-edit-start-pos-table (make-hash-table :test #'equal)
+  "Hashtable, key of which is buffer and value of which is the last
+edit position in that buffer.")
+
+(defvar company-nihongo--last-edit-tick-table (make-hash-table :test #'eq)
+  "Hashtable, key of which is buffer and value of which is the value returned by #'buffer-chars-modified-tick")
 
 ;;; Functions
 
@@ -251,14 +268,15 @@ of `char-before'."
   (cond
    ((eq buf (current-buffer))
     ;; Reset hashtable for current buffer.
-    (and (assoc buf company-nihongo--index-cache-alist)
-         (assq-delete-all buf company-nihongo--index-cache-alist))
+    ;; (and (assoc buf company-nihongo--index-cache-alist)
+    ;;      (assq-delete-all buf company-nihongo--index-cache-alist))
     (company-nihongo--get-candidates-2
      :func #'company-nihongo--get-candidates-in-current-buffer
-     :prefix prefix))
+     :prefix prefix
+     :buffer buf))
    (t
     (company-nihongo--get-candidates-2
-     :func #'company-nihongo--get-candidates-in-other-buffer
+     :func #'company-nihongo--get-candidates-in-buffer
      :prefix prefix
      :buffer buf))))
 
@@ -273,6 +291,114 @@ of `char-before'."
            (funcall func (japanese-katakana prefix) buffer)))
    (t
     (funcall func prefix buffer))))
+
+(defun company-nihongo--in-searching-window-p (buffer pos)
+  (let ((start-pos (gethash buffer company-nihongo--last-edit-start-pos-table nil)))
+    (cond
+     ((null start-pos)
+      ;; This is the first time we edit this buffer.
+      (puthash buffer pos company-nihongo--last-edit-start-pos-table)
+      nil)
+     (t
+      ;; Check if (start-pos - dist) <= pos <= (start-pos + dist)
+      ;; (message "DEBUG: company-nihongo--in-searching-window-p, start-pos=%d, pos=%d" start-pos pos)
+      (and (<= (- start-pos company-nihongo-searching-window-size)
+               pos)
+           (<= pos
+               (+ start-pos company-nihongo-searching-window-size)))))))
+
+(defun company-nihongo--buffer-modified-p (buffer)
+  (let ((last-tick (gethash buffer company-nihongo--last-edit-tick-table nil))
+        (cur-tick (with-current-buffer buffer (buffer-chars-modified-tick))))
+    (cond
+     ((null last-tick)
+      ;; This case means that this is the first time we visit BUFFER.
+      ;; Therefore, we have to create Hashtable for this buffer if
+      ;; none, so we return t.
+      (puthash buffer cur-tick company-nihongo--last-edit-tick-table)
+      t)
+     ((= last-tick cur-tick)
+      nil)
+     (t
+      t))))
+
+(defun company-nihongo--update-last-edit-start-pos (buf pos)
+  (puthash buf pos company-nihongo--last-edit-start-pos-table))
+
+(defun company-nihongo--update-last-edit-tick (buf)
+  (with-current-buffer buf
+    (puthash buf (buffer-chars-modified-tick) company-nihongo--last-edit-tick-table)))
+
+(cl-defun company-nihongo--build-hashtable-for-buffer (buffer &optional
+                                                              (beg (point-min))
+                                                              (end (point-max)))
+  (cl-loop with table = (make-hash-table :test #'equal)
+           with inserted-words = (make-hash-table :test #'equal)
+           for word in (company-nihongo--get-word-list buffer :beg beg :end end)
+           for key = (substring word 0 company-nihongo--hashtable-key-length)
+           when (and (> (length word) company-nihongo--hashtable-key-length)
+                     (not (gethash word inserted-words nil)))
+           if (gethash key table)
+           do (progn (puthash word t inserted-words)
+                     ;; this word has not been inserted yet
+                     (push word (gethash key table)))
+           else
+           do (progn (puthash key (list word) table)
+                     (puthash word t inserted-words))
+           ;; Unite res-table and existing table
+           finally return table))
+
+(defun company-nihongo--update-hashtable-for-buffer-region (buffer)
+  (let* ((last-edit-start-pos (gethash buffer
+                                       company-nihongo--last-edit-start-pos-table))
+         (beg (max (point-min)
+                   (- last-edit-start-pos
+                      company-nihongo-searching-window-size)))
+         (end (min (point-max)
+                   (+ last-edit-start-pos
+                      company-nihongo-searching-window-size)))
+         (partial-table (company-nihongo--build-hashtable-for-buffer buffer
+                                                                     beg
+                                                                     end)))
+    (company-nihongo--unite-hashtables buffer partial-table)))
+
+(defun company-nihongo--unite-hashtables (buf partial-table)
+  (cl-loop with orig-table = (assoc-default buf company-nihongo--index-cache-alist)
+           for key being hash-keys of partial-table
+           for lst = (gethash key partial-table)
+           for new-lst = (sort (cl-delete-duplicates
+                                (append (gethash key orig-table nil) lst)
+                                :test #'string=)
+                               #'string<)
+           do (puthash key new-lst orig-table)))
+
+(defun company-nihongo--prepare-for-current-buffer-completion (buf pos)
+  ;; (message "DEBUG: company-nihongo--prepare-for-current-buffer-completion, buf=%s, pos=%d" (buffer-name buf) pos)
+  (cond
+   ((null (assoc buf company-nihongo--index-cache-alist))
+    ;; There is no hashtable for this buffer BUF.
+    (company-nihongo--register-hashtable buf))
+   ((company-nihongo--in-searching-window-p buf
+                                              pos)
+    ;; Do nothing
+    )
+   ((and (not (company-nihongo--in-searching-window-p buf
+                                                        pos))
+         (not (company-nihongo--buffer-modified-p buf)))
+    ;; If we are out of the last searching window and buffer has NOT
+    ;; changed, this means that we performed undo and moved somewhere
+    ;; in the same buffer. Therefore, we don't need to update
+    ;; hashtable, but update last edit position.
+    (company-nihongo--update-last-edit-start-pos buf pos))
+   (t
+    ;; We are out of the searching window and buffer has been modified.
+    ;; (message "DEBUG: updating hash table for buffer=%s, pos=%d" (buffer-name buf) pos)
+    (company-nihongo--update-last-edit-tick buf)
+    ;; Here, we first have to update hashtable because last edit pos
+    ;; is used in
+    ;; #'company-nihongo--update-hashtable-for-buffer-region.
+    (company-nihongo--update-hashtable-for-buffer-region buf)
+    (company-nihongo--update-last-edit-start-pos buf pos))))
 
 (defun company-nihongo--get-candidates-in-current-buffer (prefix &rest _ignored)
   "Return a list of candidates in current buffer that begin with
@@ -289,24 +415,33 @@ PREFIX."
          (candidates nil)
          (head-candidates nil)
          (prefix-len (length prefix))
-         (lst nil))
+         (lst nil)
+         (top (max (point-min) (- (point) company-nihongo-searching-window-size)))
+         (bottom (min (point-max) (+ (point) company-nihongo-searching-window-size))))
     (cl-assert (and prefix-regexp cand-regexp))
+    (company-nihongo--prepare-for-current-buffer-completion (current-buffer) (point))
     (when (company-nihongo--go-search-p prefix (current-buffer))
-      ;; Note: Would it better to use hashtable for collecting candidates
-      ;; in current buffer?
       ;; (message "DEBUG: in-current-buffer, prefix=%s, company-nihongo--not-found-prefix=%s" prefix company-nihongo--not-found-prefix)
       (company-nihongo--search-candidates-in-buffer cand-regexp
                                                     prefix-len
-                                                    (point-min)
+                                                    top
                                                     (1- pos)
                                                     limit
                                                     table)
       (company-nihongo--search-candidates-in-buffer cand-regexp
                                                     prefix-len
                                                     (1+ pos)
-                                                    (point-max)
+                                                    bottom
                                                     limit
                                                     table)
+      (when (< (hash-table-count table) limit)
+        ;; If we haven't collected enough candidates, go looking for
+        ;; more candidates that are outside of the searching window.
+        (cl-loop for cand in (company-nihongo--get-candidates-in-buffer
+                              prefix
+                              (current-buffer))
+                 while (< (hash-table-count table) limit)
+                 do (puthash cand t table)))
       ;; Collect candidates in table
       (maphash
        (lambda (cand v)
@@ -435,31 +570,53 @@ the number of candidates found equals LIMIT."
         (when (< min-len (length cand))
           (puthash cand t table))))))
 
-(defun company-nihongo--get-candidates-in-other-buffer (prefix buf)
-  (cl-loop with possible-candidates = (gethash
-                                       (substring-no-properties
-                                        prefix
-                                        0
-                                        company-nihongo--hashtable-key-length)
-                                       (company-nihongo--get-hashtable buf))
+(defun company-nihongo--get-possible-candidates (prefix buf)
+  (gethash (substring-no-properties prefix
+                                    0
+                                    company-nihongo--hashtable-key-length)
+           (company-nihongo--get-hashtable buf)))
+
+(defun company-nihongo--get-candidates-in-buffer (prefix buf)
+  (cl-loop with possible-candidates = (company-nihongo--get-possible-candidates
+                                       prefix
+                                       buf)
            for cand in possible-candidates
            ;; gethash above returns a sorted list of candidates.
-           ;; So, if (string> prefix cand) returns t, it means that
+           ;; So, if (string> prefix cand) returns t, this means that
            ;; we have past over possible candidates.
-           ;; (aabc abc b bb bba bbb bbc c ca ...)
-           ;;             ^           ^
-           ;;             |           |
-           ;;         prefix = "bd"  last="bbc", prefix > last
+           ;; (b bb bba bbb bbc bbca bbcb ...)
+           ;;    ^           ^
+           ;;    |           |
+           ;; prefix = "bb"  last="bbc", prefix > last
            with candidates = nil
            with already-found = nil
+           with prefix-len = (length prefix)
            initially (when (string> prefix (car (last possible-candidates)))
                        (return nil))
-           if (string-prefix-p prefix cand)
+           if (and (< prefix-len (length cand)) (string-prefix-p prefix cand))
            do (progn (or already-found (setq already-found t))
                      (push cand candidates))
            else if already-found
            return candidates
            finally return candidates))
+
+(defun company-nihongo--hashtable-need-update-p (buffer)
+  "Return t if hashtable for buffer BUFFER needs to be update, nil
+otherwise."
+  (let ((last-tick (gethash buffer company-nihongo--last-edit-tick-table nil))
+        (last-pos (gethash buffer company-nihongo--last-edit-start-pos-table nil)))
+    (cond
+     ((null last-tick)
+      ;; This becomes true if there IS a hashtable for this buffer AND
+      ;; tick is NOT in last-edit-tick-table.
+      ;; This means that we haven't edited this buffer, so we don't
+      ;; need to update hashtable.
+      nil)
+     ((= last-tick
+         (with-current-buffer buffer (buffer-chars-modified-tick)))
+      nil)
+     (t
+      (integer-or-marker-p last-pos)))))
 
 (defun company-nihongo--get-hashtable (buf &optional new)
   "Return a hashtable that holds words in buffer BUF.
@@ -467,53 +624,107 @@ the number of candidates found equals LIMIT."
 If a hashtable has not been created for buffer BUF, or argument NEW is
 non-nil, create a new one, and put words in buffer BUF into this
 table, and store it in `company-nihongo--index-cache-alist'."
-  (when (or (null (assoc buf company-nihongo--index-cache-alist)) new)
+  (cond
+   ((or (null (assoc buf company-nihongo--index-cache-alist))
+        new)
     ;; Make a new hashtable for this buffer. Key is a string of length
     ;; company-nihongo--hashtable-key-length and its value is a list of
     ;; strings, sorted.
     ;; i.e. "あ" => '("あい" "あお" "あほ" "あんこ" ...)
     ;;      "p"  => '("pop" "prin1" "prin1-to-string" "push" ...)
     (company-nihongo--register-hashtable buf))
-  (assoc-default buf company-nihongo--index-cache-alist))
+   ((company-nihongo--hashtable-need-update-p buf)
+    (cond
+     ((and (eq buf (current-buffer))
+           (not (company-nihongo--in-searching-window-p buf (point))))
+      ;; We are editing current buffer and are out of searching
+      ;; window, so we perform partial update.
+            (message "DEBUG: company-nihongo--get-hashtable, partial updating for %s" (buffer-name buf))
+      (company-nihongo--update-hashtable-for-buffer-region buf)
+      (company-nihongo--update-last-edit-tick buf))
+     ((not (eq buf (current-buffer)))
+      ;; We are collecting candidates from buffers other than current
+      ;; buffer. If a buffer to be searched has been modified since
+      ;; the last time the hash table for this buffer was created, we
+      ;; clear this hash table and create a new one.
+      (message "DEBUG: company-nihongo--get-hashtable, recreating table for %s" (buffer-name buf))
+      (company-nihongo--register-hashtable buf)
+      (company-nihongo--update-last-edit-tick buf)))
+    (assoc-default buf company-nihongo--index-cache-alist))
+   (t
+    ;; In other cases, just return existing hash table.
+    (assoc-default buf company-nihongo--index-cache-alist))))
+
+;; (defun company-nihongo--get-hashtable (buf &optional new)
+;;   "Return a hashtable that holds words in buffer BUF.
+
+;; If a hashtable has not been created for buffer BUF, or argument NEW is
+;; non-nil, create a new one, and put words in buffer BUF into this
+;; table, and store it in `company-nihongo--index-cache-alist'."
+;;   (when (or (null (assoc buf company-nihongo--index-cache-alist))
+;;             new
+;;             ;; (company-nihongo--hashtable-need-update-p buf)
+;;             )
+;;     ;; Make a new hashtable for this buffer. Key is a string of length
+;;     ;; company-nihongo--hashtable-key-length and its value is a list of
+;;     ;; strings, sorted.
+;;     ;; i.e. "あ" => '("あい" "あお" "あほ" "あんこ" ...)
+;;     ;;      "p"  => '("pop" "prin1" "prin1-to-string" "push" ...)
+;;     (company-nihongo--register-hashtable buf))
+;;   (assoc-default buf company-nihongo--index-cache-alist))
 
 (defun company-nihongo--register-hashtable (buffer)
-  (cl-loop with table = (make-hash-table :test #'equal)
-           with inserted-words = (make-hash-table :test #'equal)
-           with res-table = (make-hash-table :test #'equal)
-           for word in (company-nihongo--get-word-list buffer)
-           for key = (substring word 0 1)
-           when (and (> (length word) 1) (not (gethash word inserted-words)))
-           if (gethash key table)
-           do (progn (puthash word t inserted-words)
-                     ;; this word has not been inserted yet
-                     (push word (gethash key table)))
-           else
-           do (progn (puthash key (list word) table)
-                     (puthash word t inserted-words))
-           finally (progn (maphash (lambda (k v)
-                                     ;; sort each list
-                                     (puthash k (sort v #'string<) res-table))
-                                   table)
-                          (push (cons buffer res-table)
-                                company-nihongo--index-cache-alist))))
+  (let ((table (make-hash-table :test #'equal)))
+    (assq-delete-all buffer company-nihongo--index-cache-alist)
+    (maphash (lambda (k v)
+               ;; sort each list
+               (puthash k (sort v #'string<) table))
+             (company-nihongo--build-hashtable-for-buffer buffer))
+    (push (cons buffer table) company-nihongo--index-cache-alist)))
 
-(defun company-nihongo--get-word-list (buffer)
+;; (defun company-nihongo--register-hashtable (buffer)
+;;   (cl-loop with table = (make-hash-table :test #'equal)
+;;            with inserted-words = (make-hash-table :test #'equal)
+;;            with res-table = (make-hash-table :test #'equal)
+;;            for word in (company-nihongo--get-word-list buffer)
+;;            for key = (substring word 0 1)
+;;            when (and (> (length word) 1) (not (gethash word inserted-words)))
+;;            if (gethash key table)
+;;            do (progn (puthash word t inserted-words)
+;;                      ;; this word has not been inserted yet
+;;                      (push word (gethash key table)))
+;;            else
+;;            do (progn (puthash key (list word) table)
+;;                      (puthash word t inserted-words))
+;;            finally (progn (maphash (lambda (k v)
+;;                                      ;; sort each list
+;;                                      (puthash k (sort v #'string<) res-table))
+;;                                    table)
+;;                           (push (cons buffer res-table)
+;;                                 company-nihongo--index-cache-alist))))
+
+(cl-defun company-nihongo--get-word-list (buffer &key
+                                                 (beg (point-min))
+                                                 (end (point-max)))
   "Split buffer string by the type of character and return a list of
 would-be candidates."
-  (cl-loop with lst = (company-nihongo--split-buffer-string buffer)
+  (cl-loop with lst = (company-nihongo--split-buffer-string buffer :beg beg :end end)
            with ret = nil
+           with sep-regexp = (format "^%s$" company-nihongo-separator-regexp)
            for curr in lst
            for next in (cdr lst)
-           unless (string-match-p (regexp-quote curr)
-                                  company-nihongo-separator-regexp)
+           unless (string-match-p sep-regexp
+                                  (regexp-quote curr))
            ;; If curr is not a separator
            do (progn (push curr ret)
-                     (when (company-nihongo--is-connected-p curr next)
+                     (when (company-nihongo--is-connected-p curr next sep-regexp)
                        (push (concat curr next) ret)))
            finally return ret))
 
-(defun company-nihongo--is-connected-p (curr next)
-  (when (and (stringp curr) (stringp next))
+(defun company-nihongo--is-connected-p (curr next separator-regexp)
+  (when (and (stringp curr)
+             (stringp next)
+             (not (string-match-p separator-regexp next)))
     (cond
      ((string-match-p (format "%s+" company-nihongo-ascii-regexp) curr)
       ;; "ascii" + X
@@ -532,27 +743,58 @@ would-be candidates."
       (or (string-match-p "\\cH+" next)
           (string-match-p "\\cK+" next))))))
 
-(defun company-nihongo--split-buffer-string (buffer)
+(cl-defun company-nihongo--split-buffer-string (buffer &key
+                                                       (beg (point-min))
+                                                       (end (point-max)))
   "Return a list of strings in buffer BUFFER, split by its character
 type."
   (let ((ret nil)
         (regexp (format "\\cH+\\|\\cK+\\|\\cC+\\|%s+\\|%s"
                         company-nihongo-ascii-regexp
                         company-nihongo-separator-regexp))
-        (word nil))
+        (word nil)
+        (end (save-excursion (goto-char end)
+                             ;; avoid situations where we are in the
+                             ;; middle of some word.
+                             (forward-word-strictly)
+                             (if (= (point) (point-max))
+                                 nil
+                               (1+ (point))))))
     (with-current-buffer buffer
-      (save-excursion (goto-char (point-min))
-                      (while (re-search-forward regexp nil t)
+      (save-excursion (goto-char beg)
+                      ;; avoid situations where we are in the middle
+                      ;; of some word, i.e.
+                      ;; match-string-no-properties
+                      ;;        ^
+                      ;;        |
+                      ;;      (point)
+                      (backward-word-strictly)
+                      (while (re-search-forward regexp end t)
                         (setq word (match-string-no-properties 0))
                         (push word ret)
-                        (when (string-match-p
+                        (cond
+                         ((string-match-p
                                (format "^%s+$" company-nihongo-ascii-regexp)
                                word)
                           ;; If word is like "abc-def", then we push
                           ;; abc and def into ret as well.
                           (mapc (lambda (elt) (push elt ret))
-                                (split-string word "[_-]" t))))))
+                                (split-string word "[_-]" t)))
+                         ((string-match-p "・" word)
+                          ;; If word is "クーリング・オフ", for
+                          ;; example, this whole string matches
+                          ;; "\\cK+".
+                          ;; In this case, we put both "クーリング"
+                          ;; and "オフ" into ret as well as "クーリン
+                          ;; グ・オフ".
+                          (mapc (lambda (elt) (push elt ret))
+                                (split-string word "[・]" t)))))))
     (nreverse ret)))
+
+(defun company-nihongo--clear-tables-for-buffer (buffer)
+  (remhash buffer company-nihongo--last-edit-tick-table)
+  (remhash buffer company-nihongo--last-edit-start-pos-table)
+  (assq-delete-all buffer company-nihongo--index-cache-alist))
 
 (defun company-nihongo (command &optional arg &rest _ignores)
   (interactive (list 'interactive))
