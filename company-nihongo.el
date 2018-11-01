@@ -792,6 +792,38 @@ type."
                                 (split-string word "[・]" t)))))))
     (nreverse ret)))
 
+(defun company-nihongo--check-index-cache-alist-idle-timer-func ()
+  "Iterate through `company-nihongo--index-cache-alist' to see if
+there is an entry for a killed bufer, and delete it if any."
+  (cl-loop for killed-buffer in
+           (cl-loop for (buffer . table) in
+                    company-nihongo--index-cache-alist
+                    unless (buffer-live-p buffer)
+                    collect buffer)
+           do (assq-delete-all killed-buffer
+                               company-nihongo--index-cache-alist)))
+
+(defun company-nihongo--check-index-cache-alist ()
+  (run-with-idle-timer 10
+                       nil
+                       #'company-nihongo--check-index-cache-alist-idle-timer-func))
+
+(defcustom company-nihongo-check-index-cache-interval 3600
+  "Every this value seconds, `company-nihongo--index-cache-alist' is
+checked if there is an entry for killed buffer.")
+
+(defvar company-nihongo--check-index-cache-alist-timer
+  (run-with-timer company-nihongo-check-index-cache-interval
+                  company-nihongo-check-index-cache-interval
+                  #'company-nihongo--check-index-cache-alist))
+
+;; (setq company-nihongo--check-index-cache-alist-timer
+;;       (run-with-timer company-nihongo-check-index-cache-interval
+;;                       company-nihongo-check-index-cache-interval
+;;                       #'company-nihongo--check-index-cache-alist))
+
+;; (cancel-timer company-nihongo--check-index-cache-alist-timer)
+
 (defun company-nihongo--clear-tables-for-buffer (buffer)
   (remhash buffer company-nihongo--last-edit-tick-table)
   (remhash buffer company-nihongo--last-edit-start-pos-table)
