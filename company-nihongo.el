@@ -639,7 +639,7 @@ table, and store it in `company-nihongo--index-cache-alist'."
            (not (company-nihongo--in-searching-window-p buf (point))))
       ;; We are editing current buffer and are out of searching
       ;; window, so we perform partial update.
-            (message "DEBUG: company-nihongo--get-hashtable, partial updating for %s" (buffer-name buf))
+      (message "DEBUG: company-nihongo--get-hashtable, partial updating for %s" (buffer-name buf))
       (company-nihongo--update-hashtable-for-buffer-region buf)
       (company-nihongo--update-last-edit-tick buf))
      ((not (eq buf (current-buffer)))
@@ -680,7 +680,8 @@ table, and store it in `company-nihongo--index-cache-alist'."
                ;; sort each list
                (puthash k (sort v #'string<) table))
              (company-nihongo--build-hashtable-for-buffer buffer))
-    (push (cons buffer table) company-nihongo--index-cache-alist)))
+    (push (cons buffer table) company-nihongo--index-cache-alist)
+    (assoc-default buffer company-nihongo--index-cache-alist)))
 
 ;; (defun company-nihongo--register-hashtable (buffer)
 ;;   (cl-loop with table = (make-hash-table :test #'equal)

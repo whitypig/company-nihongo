@@ -95,7 +95,6 @@
 " "キャピタル・ゲイン" "キャピタル" "ゲイン" "
 "))))))
 
-
 ;; (cl-loop for word in (company-nihongo--get-word-list (current-buffer))
 ;;          do (message "word=%s" word))
 
