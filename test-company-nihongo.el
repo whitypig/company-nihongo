@@ -61,7 +61,12 @@
               '("うになっているはずである")))
       (should
        (null (company-nihongo--get-candidates-in-current-buffer "する")))
-      (company-nihongo--clear-tables-for-buffer (current-buffer)))))
+      (company-nihongo--clear-tables-for-buffer (current-buffer)))
+    (with-temp-buffer
+      (insert "キャピタル・ゲイン・・コレって連結される？")
+      (newline)
+      (should
+       (null (company-nihongo--get-candidates-in-current-buffer "・"))))))
 
 (ert-deftest company-nihongo--test-split-buffer-string ()
   ""
@@ -93,7 +98,15 @@
         ret
         '("新" "・" "用語辞典" "および" "旧" "・" "用語辞典" "
 " "キャピタル・ゲイン" "キャピタル" "ゲイン" "
-"))))))
+"))))
+    (with-temp-buffer
+      (insert "キャピタル・ゲイン・・コレって連結される？")
+      (should
+       (equal (sort (company-nihongo--split-buffer-string (current-buffer))
+                    #'string<)
+              (sort '("キャピタル" "ゲイン" "キャピタル・ゲイン"
+                      "コレ" "って" "連結" "される" "？")
+                    #'string<))))))
 
 ;; (cl-loop for word in (company-nihongo--get-word-list (current-buffer))
 ;;          do (message "word=%s" word))
@@ -110,4 +123,17 @@
         (sort ret #'string<)
         (sort '("新" "用語辞典" "用語辞典および" "および" "および旧" "旧" "用語辞典"
                 "キャピタル・ゲイン" "キャピタル" "ゲイン")
-              #'string<)))))
+              #'string<))))
+  (with-temp-buffer
+    (insert "あれ・・コレって連結される？")
+    (should
+     (equal (sort (company-nihongo--get-word-list (current-buffer))
+                  #'string<)
+            (sort '("あれ" "コレ" "って" "コレって" "連結" "って連結" "される" "連結される")
+                  #'string<))))
+  (with-temp-buffer
+    (insert "キャピタル・ゲイン・・コレって連結される？")
+    (should
+     (equal (nreverse (company-nihongo--get-word-list (current-buffer)))
+            '("キャピタル・ゲイン" "キャピタル" "ゲイン"
+                        "コレ" "コレって" "って" "って連結" "連結" "連結される" "される")))))

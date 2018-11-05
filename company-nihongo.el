@@ -418,54 +418,57 @@ PREFIX."
          (lst nil)
          (top (max (point-min) (- (point) company-nihongo-searching-window-size)))
          (bottom (min (point-max) (+ (point) company-nihongo-searching-window-size))))
-    (cl-assert (and prefix-regexp cand-regexp))
-    (company-nihongo--prepare-for-current-buffer-completion (current-buffer) (point))
-    (when (company-nihongo--go-search-p prefix (current-buffer))
-      ;; (message "DEBUG: in-current-buffer, prefix=%s, company-nihongo--not-found-prefix=%s" prefix company-nihongo--not-found-prefix)
-      (company-nihongo--search-candidates-in-buffer cand-regexp
-                                                    prefix-len
-                                                    top
-                                                    (1- pos)
-                                                    limit
-                                                    table)
-      (company-nihongo--search-candidates-in-buffer cand-regexp
-                                                    prefix-len
-                                                    (1+ pos)
-                                                    bottom
-                                                    limit
-                                                    table)
-      (when (< (hash-table-count table) limit)
-        ;; If we haven't collected enough candidates, go looking for
-        ;; more candidates that are outside of the searching window.
-        (cl-loop for cand in (company-nihongo--get-candidates-in-buffer
-                              prefix
-                              (current-buffer))
-                 while (< (hash-table-count table) limit)
-                 do (puthash cand t table)))
-      ;; Collect candidates in table
-      (maphash
-       (lambda (cand v)
-         (push cand candidates)
-         (when (string-match
-                (format "\\(%s\\{2,\\}\\)%s+"
-                        prefix-regexp
-                        (company-nihongo--make-negate-regexp prefix-regexp))
-                cand)
-           ;; cand contains characters of different type other than
-           ;; that of prefix-regexp-matching. Extract
-           ;; prefix-regexp-matching string part if its length is more
-           ;; than 1 and put it into hash table.
-           ;; If prefix is "Vi" and cand is "Vimプロフェッショナル",
-           ;; for example, then we also want to collect "Vim"
-           ;; as a candidate.
-           (push (match-string-no-properties 1 cand) head-candidates)))
-       table)
-      (if candidates
-          ;; Found candidates and we clear not-found-state.
-          (company-nihongo--clear-not-found-state)
-        ;; Found nothing and we set not-found-state
-        (company-nihongo--set-not-found-state prefix (current-buffer)))
-      (append candidates head-candidates))))
+    (when (and prefix-regexp cand-regexp)
+      ;; Sometimes input character cannot be prefix and in those
+      ;; cases, prefix-regexp becomes nil and we complete nothing for
+      ;; those cases.
+      (company-nihongo--prepare-for-current-buffer-completion (current-buffer) (point))
+      (when (company-nihongo--go-search-p prefix (current-buffer))
+        ;; (message "DEBUG: in-current-buffer, prefix=%s, company-nihongo--not-found-prefix=%s" prefix company-nihongo--not-found-prefix)
+        (company-nihongo--search-candidates-in-buffer cand-regexp
+                                                      prefix-len
+                                                      top
+                                                      (1- pos)
+                                                      limit
+                                                      table)
+        (company-nihongo--search-candidates-in-buffer cand-regexp
+                                                      prefix-len
+                                                      (1+ pos)
+                                                      bottom
+                                                      limit
+                                                      table)
+        (when (< (hash-table-count table) limit)
+          ;; If we haven't collected enough candidates, go looking for
+          ;; more candidates that are outside of the searching window.
+          (cl-loop for cand in (company-nihongo--get-candidates-in-buffer
+                                prefix
+                                (current-buffer))
+                   while (< (hash-table-count table) limit)
+                   do (puthash cand t table)))
+        ;; Collect candidates in table
+        (maphash
+         (lambda (cand v)
+           (push cand candidates)
+           (when (string-match
+                  (format "\\(%s\\{2,\\}\\)%s+"
+                          prefix-regexp
+                          (company-nihongo--make-negate-regexp prefix-regexp))
+                  cand)
+             ;; cand contains characters of different type other than
+             ;; that of prefix-regexp-matching. Extract
+             ;; prefix-regexp-matching string part if its length is more
+             ;; than 1 and put it into hash table.
+             ;; If prefix is "Vi" and cand is "Vimプロフェッショナル",
+             ;; for example, then we also want to collect "Vim"
+             ;; as a candidate.
+             (push (match-string-no-properties 1 cand) head-candidates)))
+         table)
+        (if candidates
+            ;; Found candidates and we clear not-found-state.
+            (company-nihongo--clear-not-found-state)
+          ;; Found nothing and we set not-found-state
+          (company-nihongo--set-not-found-state prefix (current-buffer)))
+        (append candidates head-candidates)))))
 
 (defun company-nihongo--go-search-p (prefix buffer)
   "Return t if we should go searching for candidates in buffer
@@ -538,7 +541,8 @@ regexp in this cdr is colleted as a candidate."
                             (company-nihongo--make-negate-regexp "\\cH"))
                     prefix
                     company-nihongo-alpha-regexp)))
-     ((string-match-p "^\\cK+$" prefix)
+     ((and (string-match-p "^\\cK+$" prefix)
+           (not (string-match-p "^[・]" prefix)))
       ;; prefix is Katakana.
       ;; "katakana" or "katakana + hiragana" or "katakana + kanji"
       (cons "\\cK" (format "%s\\(%s\\cK*\\(?:\\cH*\\|\\cC*\\)\\)"
@@ -772,7 +776,9 @@ type."
                       (backward-word-strictly)
                       (while (re-search-forward regexp end t)
                         (setq word (match-string-no-properties 0))
-                        (push word ret)
+                        (unless (string-match-p "[・]\\{2,\\}+" word)
+                          ;; exclude words such as "アアアア・・・イイイイ"
+                          (push word ret))
                         (cond
                          ((string-match-p
                                (format "^%s+$" company-nihongo-ascii-regexp)
@@ -781,13 +787,22 @@ type."
                           ;; abc and def into ret as well.
                           (mapc (lambda (elt) (push elt ret))
                                 (split-string word "[_-]" t)))
-                         ((string-match-p "・" word)
+                         ((string-match-p "[・]\\{2,\\}" word)
+                          (mapc (lambda (elt)
+                                  (push elt ret)
+                                  (when (string-match-p "[^・]+[・][^・]+" elt)
+                                    (mapc (lambda (e)
+                                            (push e ret))
+                                          (split-string elt "[・]" t))))
+                                (split-string word "[・]\\{2,\\}" t)))
+                         ((string-match-p "^[^・]+[・][^・]+$" word)
                           ;; If word is "クーリング・オフ", for
                           ;; example, this whole string matches
                           ;; "\\cK+".
                           ;; In this case, we put both "クーリング"
                           ;; and "オフ" into ret as well as "クーリン
                           ;; グ・オフ".
+                          ;; word is guaranteed to be concatenated by only one "・"
                           (mapc (lambda (elt) (push elt ret))
                                 (split-string word "[・]" t)))))))
     (nreverse ret)))
