@@ -249,11 +249,15 @@ of `char-before'."
 (defun company-nihongo--clear-not-found-state ()
   (setq company-nihongo--search-in-current-buffer-state nil))
 
-(defun company-nihongo--get-candidates (prefix)
+(cl-defun company-nihongo--get-candidates (prefix &optional (others t))
   "Return a list of candidates that begin with prefix PREFIX."
   (when (and prefix (> (length prefix) 0))
     (delete-dups
-     (sort (cl-loop for buf in (funcall company-nihongo-select-buffer-function)
+     (sort (cl-loop for buf in (if others
+                                   ;; search all possible buffers
+                                   (funcall company-nihongo-select-buffer-function)
+                                 ;; search only current buffer
+                                 (list (current-buffer)))
                     with limit = (or company-nihongo-limit
                                      20)
                     nconc (company-nihongo--get-candidates-1 prefix buf) into candidates
@@ -854,6 +858,47 @@ checked if there is an entry for killed buffer.")
       (candidates
        (company-nihongo--get-candidates arg))
       (sorted t)))
+
+(defun company-nihongo-current-buffer (command &optional arg &rest _ignores)
+  (interactive (list 'interactive))
+  (cl-case command
+    (interactive
+     (company-begin-backend 'company-nihongo-current-buffer-backend))
+    (prefix
+     (company-nihongo--get-prefix))
+    (candidates
+     (company-nihongo--get-candidates arg nil))
+    (sorted t)))
+
+(defun company-nihongo-current-buffer-activate ()
+  (interactive)
+  (or company-mode (company-mode-on))
+  (setq company-backends '(company-nihongo-current-buffer)))
+
+;; Do we need this command?
+(defun company-nihongo-current-buffer-deactivate ()
+  (interactive)
+  (setq company-backends
+        (cl-labels ((rec (item seq)
+                         (cond
+                          ((null seq)
+                           nil)
+                          ((listp seq)
+                           (cond
+                            ((and (atom (car seq)) (eq item (car seq)))
+                             (rec item (cdr seq)))
+                            (t
+                             (cons (rec item (car seq)) (rec item (cdr seq))))))
+                          ((eq item seq)
+                           nil)
+                          (t
+                           seq))))
+          ;; The depth of seq is at most 2 and returned value could be
+          ;; somethig like '(nil (backendA backendB)).
+          ;; Tha'ts why we delete nil here.
+          (delete nil
+                  (rec 'company-nihongo-current-buffer company-backends))))
+  (message "Now company-backends is %s" company-backends))
 
 (provide 'company-nihongo)
 
