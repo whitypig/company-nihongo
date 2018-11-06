@@ -66,7 +66,11 @@
       (insert "キャピタル・ゲイン・・コレって連結される？")
       (newline)
       (should
-       (null (company-nihongo--get-candidates-in-current-buffer "・"))))))
+       (null (company-nihongo--get-candidates-in-current-buffer "・")))
+      (should
+       (equal (company-nihongo--get-candidates-in-current-buffer "キャ")
+              '("キャピタル" "キャピタル・ゲイン")))
+      (company-nihongo--clear-tables-for-buffer (current-buffer)))))
 
 (ert-deftest company-nihongo--test-split-buffer-string ()
   ""
@@ -137,3 +141,11 @@
      (equal (nreverse (company-nihongo--get-word-list (current-buffer)))
             '("キャピタル・ゲイン" "キャピタル" "ゲイン"
                         "コレ" "コレって" "って" "って連結" "連結" "連結される" "される")))))
+
+(ert-deftest company-nihongo--test-make-regexp ()
+  (cl-flet ((get-regexp (prefix)
+                        (cdr (company-nihongo--make-regexp prefix))))
+    (should
+     (string-match-p (get-regexp "キャピ") "キャピタル・ゲイン・・コレ"))
+    (should
+     (string-match-p (get-regexp "キャピ") "キャピタル・ゲイン・コレ"))))

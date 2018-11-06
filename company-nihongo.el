@@ -564,8 +564,9 @@ regexp in this cdr is colleted as a candidate."
       nil))))
 
 (defun company-nihongo--search-candidates-in-buffer (regexp min-len beg end limit table)
-  "Search for regexp in the region [BEG, END] until it reaches END or
-the number of candidates found equals LIMIT."
+  "Search for strings that matches REGEXP in the region [BEG, END] in
+current buffer until it reaches END or the number of candidates found
+equals LIMIT."
   (let ((cand nil))
     (save-excursion
       (goto-char beg)
@@ -574,7 +575,13 @@ the number of candidates found equals LIMIT."
                   ;; end) here to collect a candidate that just ends
                   ;; at (point-max)
                   (posix-search-forward regexp (1+ end) t))
-        (setq cand (match-string-no-properties 1))
+        ;; If matching string is "XXX・・・YYY", cut "・・・YYY" part
+        ;; so that words like "アイ・ウエ・・・オ" won't be included
+        ;; in candidates because we don't consider those words as
+        ;; proper nihongo words.
+        (setq cand (replace-regexp-in-string "[・]\\{2,\\}.*$"
+                                             ""
+                                             (match-string-no-properties 1)))
         (when (< min-len (length cand))
           (puthash cand t table))))))
 
