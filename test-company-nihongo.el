@@ -116,18 +116,18 @@
 ;;          do (message "word=%s" word))
 
 (ert-deftest company-nihongo--test-get-word-list ()
-  (with-temp-buffer
-      (insert "新・用語辞典および旧・用語辞典")
-      (newline)
-      (insert "キャピタル・ゲイン")
-      (newline)
-      (setq ret (company-nihongo--get-word-list (current-buffer)))
-      (should
-       (equal
-        (sort ret #'string<)
-        (sort '("新" "用語辞典" "用語辞典および" "および" "および旧" "旧" "用語辞典"
-                "キャピタル・ゲイン" "キャピタル" "ゲイン")
-              #'string<))))
+  ;; (with-temp-buffer
+  ;;     (insert "新・用語辞典および旧・用語辞典")
+  ;;     (newline)
+  ;;     (insert "キャピタル・ゲイン")
+  ;;     (newline)
+  ;;     (setq ret (company-nihongo--get-word-list (current-buffer)))
+  ;;     (should
+  ;;      (equal
+  ;;       (sort ret #'string<)
+  ;;       (sort '("新" "用語辞典" "用語辞典および" "および" "および旧" "旧" "用語辞典"
+  ;;               "キャピタル・ゲイン" "キャピタル" "ゲイン")
+  ;;             #'string<))))
   (with-temp-buffer
     (insert "あれ・・コレって連結される？")
     (should
@@ -140,7 +140,12 @@
     (should
      (equal (nreverse (company-nihongo--get-word-list (current-buffer)))
             '("キャピタル・ゲイン" "キャピタル" "ゲイン"
-                        "コレ" "コレって" "って" "って連結" "連結" "連結される" "される")))))
+              "コレ" "コレって" "って" "って連結" "連結" "連結される" "される"))))
+  (with-temp-buffer
+    (insert "あれコレそれドレ")
+    (should
+     (equal (nreverse (company-nihongo--get-word-list (current-buffer)))
+            '("あれ" "コレ" "コレそれ" "それ" "ドレ")))))
 
 (ert-deftest company-nihongo--test-make-regexp ()
   (cl-flet ((get-regexp (prefix)

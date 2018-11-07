@@ -728,7 +728,7 @@ would-be candidates."
            with ret = nil
            with sep-regexp = (format "^%s$" company-nihongo-separator-regexp)
            for curr in lst
-           for next in (cdr lst)
+           for next in (append (cdr lst) '(nil))
            unless (string-match-p sep-regexp
                                   (regexp-quote curr))
            ;; If curr is not a separator
@@ -850,6 +850,11 @@ checked if there is an entry for killed buffer.")
 
 ;; (cancel-timer company-nihongo--check-index-cache-alist-timer)
 
+(defun company-nihongo--try-consecutive-completion (candidate)
+  ;; If some conditions are met, call #'company-manual-begin
+  ;; interactively.
+  )
+
 (defun company-nihongo--clear-tables-for-buffer (buffer)
   (remhash buffer company-nihongo--last-edit-tick-table)
   (remhash buffer company-nihongo--last-edit-start-pos-table)
@@ -864,7 +869,9 @@ checked if there is an entry for killed buffer.")
        (company-nihongo--get-prefix))
       (candidates
        (company-nihongo--get-candidates arg))
-      (sorted t)))
+      (sorted t)
+      (post-completion
+       (company-nihongo--try-consecutive-completion arg))))
 
 (defun company-nihongo-current-buffer (command &optional arg &rest _ignores)
   (interactive (list 'interactive))
