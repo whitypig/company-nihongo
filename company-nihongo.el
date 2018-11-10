@@ -78,11 +78,21 @@ searched for candidates."
   :type 'function
   :group 'company-nihongo)
 
+(defcustom company-nihongo-use-3-words-completion t
+  "TODO"
+  :type 'boolean
+  :group 'company-nihongo)
+
 (defcustom company-nihongo-searching-window-size 1000
   "The size of window in which candidates in current buffer are
 searched. In other words, searching for candidates in current buffer
 is perfomed on [point - window-size, point + window-size]."
   :type 'integer
+  :group 'company-nihongo)
+
+(defcustom company-nihongo-use-consective-completion t
+  ""
+  :type 'boolean
   :group 'company-nihongo)
 
 ;; (setq company-nihongo-searching-window-size 500)
@@ -229,16 +239,20 @@ of `char-before'."
       (company-nihongo--clear-not-found-state))
     (when regexp
       ;; Bug: When the string before the point is "う〜",
-      ;; company-nihongo-get-regexp returns "\\cH" as regexp. However,
+      ;; company-nihongo--get-regexp returns "\\cH" as regexp. However,
       ;; (looking-at "\\cH") returns nil since (string-match-p "\\cH"
-      ;; "〜") is nil, so company-nihongo-prefix doen't move point. As a
-      ;; result, ac-prefix becomes "", i.e. empty string.
+      ;; "〜") returns nil, so company-nihongo-prefix doen't move point. As a
+      ;; result, prefix becomes "", i.e. empty string.
       (save-excursion
         (backward-char)
         (while (and (not (bobp))
                     (looking-at-p regexp))
           (backward-char))
         (unless (looking-at-p regexp)
+          (forward-char))
+        (when (and (string= regexp "\\cK")
+                   (looking-at-p "[・]"))
+          ;; remove leading "・" when regexp is for katakana words.
           (forward-char))
         (buffer-substring-no-properties (point) pos)))))
 
@@ -728,13 +742,20 @@ would-be candidates."
            with ret = nil
            with sep-regexp = (format "^%s$" company-nihongo-separator-regexp)
            for curr in lst
-           for next in (append (cdr lst) '(nil))
+           for next1 in (append (cdr lst) '(nil))
+           for next2 in (append (cddr lst) '(nil nil))
            unless (string-match-p sep-regexp
                                   (regexp-quote curr))
            ;; If curr is not a separator
            do (progn (push curr ret)
-                     (when (company-nihongo--is-connected-p curr next sep-regexp)
-                       (push (concat curr next) ret)))
+                     (when (company-nihongo--is-connected-p curr next1 sep-regexp)
+                       (push (concat curr next1) ret))
+                     (when (and company-nihongo-use-3-words-completion
+                                (company-nihongo--is-3-consective-p curr
+                                                                    next1
+                                                                    next2
+                                                                    sep-regexp))
+                       (push (concat curr next1 next2) ret)))
            finally return ret))
 
 (defun company-nihongo--is-connected-p (curr next separator-regexp)
@@ -758,6 +779,23 @@ would-be candidates."
       ;; "kanji" + X
       (or (string-match-p "\\cH+" next)
           (string-match-p "\\cK+" next))))))
+
+(defun company-nihongo--is-3-consective-p (cur next1 next2 sep-regexp)
+  "Return t if a concatenated word CUR + NEXT1 + NEXT2 can be a
+candidate."
+  (when (cl-every (lambda (s)
+                    (and (stringp s)
+                         (not (string-match-p sep-regexp s))))
+                  (list cur next1 next2))
+    (cond
+     ((and
+       ;; カタカナ+ひらがな+英数字
+       (string-match-p "^\\cK+$" cur)
+       (string-match-p "^\\cH+$" next1)
+       (string-match-p (format "^%s+$" company-nihongo-alpha-regexp) next2))
+      t)
+     (t
+      nil))))
 
 (cl-defun company-nihongo--split-buffer-string (buffer &key
                                                        (beg (point-min))
@@ -787,18 +825,23 @@ type."
                       (backward-word-strictly)
                       (while (re-search-forward regexp end t)
                         (setq word (match-string-no-properties 0))
-                        (unless (string-match-p "[・]\\{2,\\}+" word)
-                          ;; exclude words such as "アアアア・・・イイイイ"
+                        (unless (or (string-match-p "[・]\\{2,\\}+" word)
+                                    (string-match-p "^[・][^・]+" word))
+                          ;; Exclude words such as "アアアア・・・イイイイ" and
+                          ;; "・ウエオ"
                           (push word ret))
                         (cond
-                         ((string-match-p
-                               (format "^%s+$" company-nihongo-ascii-regexp)
-                               word)
+                         ((and
+                           (string-match-p (format "^%s+$" company-nihongo-ascii-regexp)
+                                           word)
+                           (cl-find ?- word))
                           ;; If word is like "abc-def", then we push
                           ;; abc and def into ret as well.
                           (mapc (lambda (elt) (push elt ret))
                                 (split-string word "[_-]" t)))
                          ((string-match-p "[・]\\{2,\\}" word)
+                          ;; split "アイアイ・・ウエウエ" into
+                          ;; "アイアイ" and "ウエウエ".
                           (mapc (lambda (elt)
                                   (push elt ret)
                                   (when (string-match-p "[^・]+[・][^・]+" elt)
@@ -806,14 +849,21 @@ type."
                                             (push e ret))
                                           (split-string elt "[・]" t))))
                                 (split-string word "[・]\\{2,\\}" t)))
+                         ((string-match-p "^[・][^・]+$" word)
+                          ;; When word is "・コンピューター",
+                          ;; split this into "・" and "コンピューター".
+                          (push "・" ret)
+                          (push (substring word 1) ret))
                          ((string-match-p "^[^・]+[・][^・]+$" word)
-                          ;; If word is "クーリング・オフ", for
-                          ;; example, this whole string matches
-                          ;; "\\cK+".
+                          ;; The case where word is somethig like "クーリング・オフ".
                           ;; In this case, we put both "クーリング"
                           ;; and "オフ" into ret as well as "クーリン
                           ;; グ・オフ".
-                          ;; word is guaranteed to be concatenated by only one "・"
+                          ;; We have to push only each of splitted
+                          ;; words because concatenated word has
+                          ;; already been pushed.
+                          ;; word is guaranteed to be concatenated by
+                          ;; only one "・"
                           (mapc (lambda (elt) (push elt ret))
                                 (split-string word "[・]" t)))))))
     (nreverse ret)))
@@ -850,28 +900,33 @@ checked if there is an entry for killed buffer.")
 
 ;; (cancel-timer company-nihongo--check-index-cache-alist-timer)
 
-(defun company-nihongo--try-consecutive-completion (candidate)
-  ;; If some conditions are met, call #'company-manual-begin
-  ;; interactively.
-  )
-
 (defun company-nihongo--clear-tables-for-buffer (buffer)
   (remhash buffer company-nihongo--last-edit-tick-table)
   (remhash buffer company-nihongo--last-edit-start-pos-table)
   (assq-delete-all buffer company-nihongo--index-cache-alist))
 
+(defun company-nihongo--try-consecutive-completion (candidate)
+  ;; If some conditions are met, call #'company-manual-begin
+  ;; interactively.
+  (when (and company-nihongo-use-consective-completion
+             (stringp candidate)
+             (not (string-match-p (format "^%s+$"
+                                          company-nihongo-ascii-regexp)
+                                  candidate)))
+    (ignore-errors (company-begin-backend 'company-nihongo))))
+
 (defun company-nihongo (command &optional arg &rest _ignores)
   (interactive (list 'interactive))
   (cl-case command
-      (interactive
-       (company-begin-backend 'company-nihongo-backend))
-      (prefix
-       (company-nihongo--get-prefix))
-      (candidates
-       (company-nihongo--get-candidates arg))
-      (sorted t)
-      (post-completion
-       (company-nihongo--try-consecutive-completion arg))))
+    (interactive
+     (company-begin-backend 'company-nihongo-backend))
+    (prefix
+     (company-nihongo--get-prefix))
+    (candidates
+     (company-nihongo--get-candidates arg))
+    (sorted t)
+    (post-completion
+     (company-nihongo--try-consecutive-completion arg))))
 
 (defun company-nihongo-current-buffer (command &optional arg &rest _ignores)
   (interactive (list 'interactive))
@@ -886,8 +941,13 @@ checked if there is an entry for killed buffer.")
 
 (defun company-nihongo-current-buffer-activate ()
   (interactive)
-  (or company-mode (company-mode-on))
-  (setq company-backends '(company-nihongo-current-buffer)))
+  (cond
+   (company-mode
+    (add-to-list company-backends 'company-nihongo))
+   (t
+    ;; activate company-mode
+    (company-mode-on)
+    (setq company-backends '(company-nihongo-current-buffer)))))
 
 ;; Do we need this command?
 (defun company-nihongo-current-buffer-deactivate ()

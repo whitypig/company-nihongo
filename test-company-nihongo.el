@@ -1,4 +1,7 @@
-(ert-deftest company-nihongo--test-get-candidates-in-current-buffer ()
+(defun company-nihongo--test-get-test-buffer ()
+  (get-buffer-create "*company-nihongo-test*"))
+
+(ert-deftest company-nihongo--test-get-candidates-in-current-buffer$ ()
   ""
   (let ((lst (sort '("のABC" "のdef" "の店舗" "の店長") #'string<)))
     ;; prefix is "の"
@@ -64,15 +67,20 @@
       (company-nihongo--clear-tables-for-buffer (current-buffer)))
     (with-temp-buffer
       (insert "キャピタル・ゲイン・・コレって連結される？")
-      (newline)
       (should
        (null (company-nihongo--get-candidates-in-current-buffer "・")))
       (should
        (equal (company-nihongo--get-candidates-in-current-buffer "キャ")
               '("キャピタル" "キャピタル・ゲイン")))
+      (company-nihongo--clear-tables-for-buffer (current-buffer)))
+    (with-temp-buffer
+      (insert "新・コンピューター")
+      (should
+       (equal (company-nihongo--get-candidates-in-current-buffer "コ")
+              '("コンピューター")))
       (company-nihongo--clear-tables-for-buffer (current-buffer)))))
 
-(ert-deftest company-nihongo--test-split-buffer-string ()
+(ert-deftest company-nihongo--test-split-buffer-string$ ()
   ""
   (let ((ret nil)
         (expeted '("*** 「" "する" "。###" "東京三菱" "」
@@ -110,24 +118,30 @@
                     #'string<)
               (sort '("キャピタル" "ゲイン" "キャピタル・ゲイン"
                       "コレ" "って" "連結" "される" "？")
-                    #'string<))))))
+                    #'string<))))
+    (with-temp-buffer
+      (insert "新・コンピューター")
+      (should
+       (equal (sort (company-nihongo--split-buffer-string (current-buffer)) #'string<)
+              (sort '("新" "・" "コンピューター") #'string<))))
+    ))
 
 ;; (cl-loop for word in (company-nihongo--get-word-list (current-buffer))
 ;;          do (message "word=%s" word))
 
-(ert-deftest company-nihongo--test-get-word-list ()
-  ;; (with-temp-buffer
-  ;;     (insert "新・用語辞典および旧・用語辞典")
-  ;;     (newline)
-  ;;     (insert "キャピタル・ゲイン")
-  ;;     (newline)
-  ;;     (setq ret (company-nihongo--get-word-list (current-buffer)))
-  ;;     (should
-  ;;      (equal
-  ;;       (sort ret #'string<)
-  ;;       (sort '("新" "用語辞典" "用語辞典および" "および" "および旧" "旧" "用語辞典"
-  ;;               "キャピタル・ゲイン" "キャピタル" "ゲイン")
-  ;;             #'string<))))
+(ert-deftest company-nihongo--test-get-word-list$ ()
+  (with-temp-buffer
+      (insert "新・用語辞典および旧・用語辞典")
+      (newline)
+      (insert "キャピタル・ゲイン")
+      (newline)
+      (setq ret (company-nihongo--get-word-list (current-buffer)))
+      (should
+       (equal
+        (sort ret #'string<)
+        (sort '("新" "用語辞典" "用語辞典および" "および" "および旧" "旧" "用語辞典"
+                "キャピタル・ゲイン" "キャピタル" "ゲイン")
+              #'string<))))
   (with-temp-buffer
     (insert "あれ・・コレって連結される？")
     (should
@@ -147,10 +161,62 @@
      (equal (nreverse (company-nihongo--get-word-list (current-buffer)))
             '("あれ" "コレ" "コレそれ" "それ" "ドレ")))))
 
-(ert-deftest company-nihongo--test-make-regexp ()
+(ert-deftest company-nihongo--test-make-regexp$ ()
   (cl-flet ((get-regexp (prefix)
                         (cdr (company-nihongo--make-regexp prefix))))
     (should
      (string-match-p (get-regexp "キャピ") "キャピタル・ゲイン・・コレ"))
     (should
      (string-match-p (get-regexp "キャピ") "キャピタル・ゲイン・コレ"))))
+
+
+(ert-deftest company-nihongo--test-is-3-consective-p$ ()
+  (should
+   (company-nihongo--is-3-consective-p "アイ"
+                                       "うえ"
+                                       "yeah"
+                                       company-nihongo-separator-regexp))
+  (should
+   (company-nihongo--is-3-consective-p "トップレベル"
+                                       "の"
+                                       "heading"
+                                       company-nihongo-separator-regexp))
+  (should
+   (null (company-nihongo--is-3-consective-p "あい"
+                                             "うえ"
+                                             "yeah"
+                                             company-nihongo-separator-regexp))))
+
+(ert-deftest company-nihongo--test-get-word-list-3$ ()
+  (with-temp-buffer
+    (insert "トップレベルのheading")
+    (should
+     (equal (nreverse (company-nihongo--get-word-list (current-buffer)))
+            '("トップレベル" "トップレベルの" "トップレベルのheading"
+              "の" "のheading" "heading")))))
+
+(ert-deftest company-nihongo--test-split-buffer-string-dup-words$ ()
+  (with-current-buffer (company-nihongo--test-get-test-buffer)
+    (erase-buffer)
+    (goto-char (point-min))
+    (insert "トップレベルのheading")
+    (should
+     (equal (company-nihongo--split-buffer-string (current-buffer))
+            '("トップレベル" "の" "heading")))))
+
+(ert-deftest company-nihongo--test-get-candidates$ ()
+  (with-current-buffer (company-nihongo--test-get-test-buffer)
+    (erase-buffer)
+    (c-mode)
+    (insert "新・コンビネーション")
+    (company-nihongo--register-hashtable (current-buffer)))
+  (with-temp-buffer
+    (c-mode)
+    (should
+     (null (company-nihongo--get-candidates "・")))
+    (should
+     (equal
+      (company-nihongo--get-candidates-in-buffer "コ"
+                                                 (company-nihongo--test-get-test-buffer))
+      '("コンビネーション"))))
+  (company-nihongo--clear-tables-for-buffer (company-nihongo--test-get-test-buffer)))
