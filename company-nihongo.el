@@ -692,24 +692,6 @@ table, and store it in `company-nihongo--index-cache-alist'."
     ;; In other cases, just return existing hash table.
     (assoc-default buf company-nihongo--index-cache-alist))))
 
-;; (defun company-nihongo--get-hashtable (buf &optional new)
-;;   "Return a hashtable that holds words in buffer BUF.
-
-;; If a hashtable has not been created for buffer BUF, or argument NEW is
-;; non-nil, create a new one, and put words in buffer BUF into this
-;; table, and store it in `company-nihongo--index-cache-alist'."
-;;   (when (or (null (assoc buf company-nihongo--index-cache-alist))
-;;             new
-;;             ;; (company-nihongo--hashtable-need-update-p buf)
-;;             )
-;;     ;; Make a new hashtable for this buffer. Key is a string of length
-;;     ;; company-nihongo--hashtable-key-length and its value is a list of
-;;     ;; strings, sorted.
-;;     ;; i.e. "あ" => '("あい" "あお" "あほ" "あんこ" ...)
-;;     ;;      "p"  => '("pop" "prin1" "prin1-to-string" "push" ...)
-;;     (company-nihongo--register-hashtable buf))
-;;   (assoc-default buf company-nihongo--index-cache-alist))
-
 (defun company-nihongo--register-hashtable (buffer)
   (let ((table (make-hash-table :test #'equal)))
     (assq-delete-all buffer company-nihongo--index-cache-alist)
@@ -858,58 +840,6 @@ type."
                                     (push elt ret))
                                 (company-nihongo--split-kanakana-word word)))))))
     (nreverse ret)))
-
-;; (cl-defun company-nihongo--split-buffer-string (buffer &key
-;;                                                        (beg (point-min))
-;;                                                        (end (point-max)))
-;;   "Return a list of strings in buffer BUFFER, split by its character
-;; type."
-;;   (let ((ret nil)
-;;         (regexp (format "\\cH+\\|\\cK+\\|\\cC+\\|%s+\\|%s"
-;;                         company-nihongo-ascii-regexp
-;;                         company-nihongo-separator-regexp))
-;;         (word nil)
-;;         (end (save-excursion (goto-char end)
-;;                              ;; avoid situations where we are in the
-;;                              ;; middle of some word.
-;;                              (forward-word-strictly)
-;;                              (if (= (point) (point-max))
-;;                                  nil
-;;                                (1+ (point))))))
-;;     (with-current-buffer buffer
-;;       (save-excursion (goto-char beg)
-;;                       ;; avoid situations where we are in the middle
-;;                       ;; of some word, i.e.
-;;                       ;; match-string-no-properties
-;;                       ;;        ^
-;;                       ;;        |
-;;                       ;;      (point)
-;;                       (backward-word-strictly)
-;;                       (while (re-search-forward regexp end t)
-;;                         (setq word (match-string-no-properties 0))
-;;                         (unless (string-match-p "[・]" word)
-;;                           ;; Exclude words such as "アアアア・・・イイイイ",
-;;                           ;; "・ウエオ" and "カキク・ケコ".
-;;                           (push word ret))
-;;                         (cond
-;;                          ((and
-;;                            (string-match-p (format "^%s+$" company-nihongo-ascii-regexp)
-;;                                            word)
-;;                            (cl-find ?- word))
-;;                           ;; If word is like "abc-def", then we push
-;;                           ;; abc and def into ret as well.
-;;                           (mapc (lambda (elt) (push elt ret))
-;;                                 (split-string word "[_-]" t)))
-;;                          ((string-match-p "[・]" word)
-;;                           ;; word must be Katakana word.
-;;                           (mapc (lambda (elt)
-;;                                   (when (string-match-p "^[^・]+.*[・].*[^・]$" elt)
-;;                                     (push elt ret)))
-;;                                 (split-string word "・・" t))
-;;                           (mapc (lambda (elt)
-;;                                     (push elt ret))
-;;                                 (company-nihongo--process-kanakana-word word)))))))
-;;     (nreverse ret)))
 
 (defun company-nihongo--split-kanakana-word (word)
   "Split katakana word WORD by \"・\" and return a list of split
