@@ -106,24 +106,27 @@
       (newline)
       (setq ret (company-nihongo--split-buffer-string (current-buffer)))
       (should
-       (equal
-        ret
-        '("新" "・" "用語辞典" "および" "旧" "・" "用語辞典" "
-" "キャピタル・ゲイン" "キャピタル" "ゲイン" "
+       (equal ret
+              '("新" "・" "用語辞典" "および" "旧" "・" "用語辞典" "
+" "キャピタル" "・" "ゲイン" "
 "))))
     (with-temp-buffer
       (insert "キャピタル・ゲイン・・コレって連結される？")
       (should
        (equal (sort (company-nihongo--split-buffer-string (current-buffer))
                     #'string<)
-              (sort '("キャピタル" "ゲイン" "キャピタル・ゲイン"
-                      "コレ" "って" "連結" "される" "？")
+              (sort '("キャピタル" "・" "ゲイン" "・・" "コレ" "って" "連結" "される" "？")
                     #'string<))))
     (with-temp-buffer
       (insert "新・コンピューター")
       (should
        (equal (sort (company-nihongo--split-buffer-string (current-buffer)) #'string<)
               (sort '("新" "・" "コンピューター") #'string<))))
+    (with-temp-buffer
+      (insert "キャピタル・ゲイン")
+      (should
+       (equal (company-nihongo--split-buffer-string (current-buffer))
+              '("キャピタル" "・" "ゲイン"))))
     ))
 
 ;; (cl-loop for word in (company-nihongo--get-word-list (current-buffer))
@@ -140,7 +143,7 @@
        (equal
         (sort ret #'string<)
         (sort '("新" "用語辞典" "用語辞典および" "および" "および旧" "旧" "用語辞典"
-                "キャピタル・ゲイン" "キャピタル" "ゲイン")
+                "キャピタル" "ゲイン" "キャピタル・ゲイン")
               #'string<))))
   (with-temp-buffer
     (insert "あれ・・コレって連結される？")
@@ -153,13 +156,23 @@
     (insert "キャピタル・ゲイン・・コレって連結される？")
     (should
      (equal (nreverse (company-nihongo--get-word-list (current-buffer)))
-            '("キャピタル・ゲイン" "キャピタル" "ゲイン"
+            '("キャピタル" "キャピタル・ゲイン" "ゲイン"
               "コレ" "コレって" "って" "って連結" "連結" "連結される" "される"))))
   (with-temp-buffer
     (insert "あれコレそれドレ")
     (should
      (equal (nreverse (company-nihongo--get-word-list (current-buffer)))
-            '("あれ" "コレ" "コレそれ" "それ" "ドレ")))))
+            '("あれ" "あれコレ" "コレ" "コレそれ" "それ" "それドレ" "ドレ"))))
+  (with-temp-buffer
+    (insert "プレミアム・ゴールド・スペシャル・プラチナ・メンバーシップ")
+    (should
+     (equal (nreverse (company-nihongo--get-word-list (current-buffer)))
+            '("プレミアム" "プレミアム・ゴールド" "ゴールド"
+              "プレミアム・ゴールド・スペシャル" "スペシャル"
+              "プレミアム・ゴールド・スペシャル・プラチナ"
+              "プラチナ" "プレミアム・ゴールド・スペシャル・プラチナ・メンバーシップ"
+              "メンバーシップ"))))
+  )
 
 (ert-deftest company-nihongo--test-make-regexp$ ()
   (cl-flet ((get-regexp (prefix)
@@ -185,6 +198,11 @@
    (null (company-nihongo--is-3-consective-p "あい"
                                              "うえ"
                                              "yeah"
+                                             company-nihongo-separator-regexp)))
+  (should
+   (null (company-nihongo--is-3-consective-p "・"
+                                             "あい"
+                                             "ueo"
                                              company-nihongo-separator-regexp))))
 
 (ert-deftest company-nihongo--test-get-word-list-3$ ()
@@ -220,3 +238,20 @@
                                                  (company-nihongo--test-get-test-buffer))
       '("コンビネーション"))))
   (company-nihongo--clear-tables-for-buffer (company-nihongo--test-get-test-buffer)))
+
+(ert-deftest company-nihongo--test--process-katakana-word$ ()
+  (should
+   (equal (company-nihongo--process-kanakana-word "・・・アイウ・・エ・オ")
+          '("・・" "アイウ" "・・" "エ" "・" "オ")))
+  (should
+   (equal (company-nihongo--process-kanakana-word "・ハロー")
+          '("・" "ハロー")))
+  (should
+   (equal (company-nihongo--process-kanakana-word "・")
+          '("・")))
+  (should
+   (equal (company-nihongo--process-kanakana-word "キャピタル・ゲイン・・コレ")
+          '("キャピタル" "・" "ゲイン" "・・" "コレ")))
+  (should
+   (equal (company-nihongo--process-kanakana-word "・キャピタル・ゲイン・・コレ・・")
+          '("・" "キャピタル" "・" "ゲイン" "・・" "コレ" "・・"))))

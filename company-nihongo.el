@@ -133,6 +133,12 @@ edit position in that buffer.")
 (defvar company-nihongo--last-edit-tick-table (make-hash-table :test #'eq)
   "Hashtable, key of which is buffer and value of which is the value returned by #'buffer-chars-modified-tick")
 
+(defvar company-nihongo--black-dot "・"
+  "")
+
+(defvar company-nihongo--two-black-dots "・・"
+  "")
+
 ;;; Functions
 
 (defun company-nihongo-compare-candidates (a b)
@@ -251,9 +257,11 @@ of `char-before'."
         (unless (looking-at-p regexp)
           (forward-char))
         (when (and (string= regexp "\\cK")
-                   (looking-at-p "[・]"))
+                   (looking-at-p company-nihongo--black-dot))
           ;; remove leading "・" when regexp is for katakana words.
-          (forward-char))
+          (while (and (not (bobp))
+                      (looking-at-p company-nihongo--black-dot))
+            (forward-char)))
         (buffer-substring-no-properties (point) pos)))))
 
 (defun company-nihongo--set-not-found-state (prefix buffer)
@@ -712,27 +720,6 @@ table, and store it in `company-nihongo--index-cache-alist'."
     (push (cons buffer table) company-nihongo--index-cache-alist)
     (assoc-default buffer company-nihongo--index-cache-alist)))
 
-;; (defun company-nihongo--register-hashtable (buffer)
-;;   (cl-loop with table = (make-hash-table :test #'equal)
-;;            with inserted-words = (make-hash-table :test #'equal)
-;;            with res-table = (make-hash-table :test #'equal)
-;;            for word in (company-nihongo--get-word-list buffer)
-;;            for key = (substring word 0 1)
-;;            when (and (> (length word) 1) (not (gethash word inserted-words)))
-;;            if (gethash key table)
-;;            do (progn (puthash word t inserted-words)
-;;                      ;; this word has not been inserted yet
-;;                      (push word (gethash key table)))
-;;            else
-;;            do (progn (puthash key (list word) table)
-;;                      (puthash word t inserted-words))
-;;            finally (progn (maphash (lambda (k v)
-;;                                      ;; sort each list
-;;                                      (puthash k (sort v #'string<) res-table))
-;;                                    table)
-;;                           (push (cons buffer res-table)
-;;                                 company-nihongo--index-cache-alist))))
-
 (cl-defun company-nihongo--get-word-list (buffer &key
                                                  (beg (point-min))
                                                  (end (point-max)))
@@ -741,21 +728,48 @@ would-be candidates."
   (cl-loop with lst = (company-nihongo--split-buffer-string buffer :beg beg :end end)
            with ret = nil
            with sep-regexp = (format "^%s$" company-nihongo-separator-regexp)
+           with acc = nil
+           with dot-cnt = 0
+           with word-cnt = 0
            for curr in lst
            for next1 in (append (cdr lst) '(nil))
            for next2 in (append (cddr lst) '(nil nil))
-           unless (string-match-p sep-regexp
-                                  (regexp-quote curr))
-           ;; If curr is not a separator
-           do (progn (push curr ret)
-                     (when (company-nihongo--is-connected-p curr next1 sep-regexp)
-                       (push (concat curr next1) ret))
-                     (when (and company-nihongo-use-3-words-completion
-                                (company-nihongo--is-3-consective-p curr
-                                                                    next1
-                                                                    next2
-                                                                    sep-regexp))
-                       (push (concat curr next1 next2) ret)))
+           do (progn
+                ;; take special care for katakana words
+                (cond
+                 ((string= curr company-nihongo--black-dot)
+                  (and acc (push curr acc) (cl-incf dot-cnt)))
+                 ((string= curr company-nihongo--two-black-dots)
+                  (setq acc nil
+                        dot-cnt 0
+                        word-cnt 0))
+                 ((string-match-p "^\\cK+$" curr)
+                  ;; Ordinary katakana word
+                  (push curr acc)
+                  (cl-incf word-cnt)
+                  ;; When lst is '("アイ" "・" "ウエ" ・ "オ"), we
+                  ;; want to make both of "アイ・ウエ" and "アイ・ウエ・
+                  ;; オ" candidates. That's why we have to check here
+                  ;; and there if acc could make a new candidte when
+                  ;; we push curr into acc.
+                  (when (< 0 dot-cnt word-cnt)
+                    (push (apply #'concat (reverse acc)) ret)))
+                 (t
+                  ;; other kinds of words
+                  (setq acc nil
+                        dot-cnt 0
+                        word-cnt 0)))
+                ;; normal processing
+                (unless (string-match-p sep-regexp curr)
+                  (push curr ret)
+                  (when (company-nihongo--is-connected-p curr next1 sep-regexp)
+                    (push (concat curr next1) ret))
+                  (when (and company-nihongo-use-3-words-completion
+                             (company-nihongo--is-3-consective-p curr
+                                                                 next1
+                                                                 next2
+                                                                 sep-regexp))
+                    (push (concat curr next1 next2) ret))))
            finally return ret))
 
 (defun company-nihongo--is-connected-p (curr next separator-regexp)
@@ -770,6 +784,7 @@ would-be candidates."
      ((string-match-p "\\cH+" curr)
       ;; "hiragana" + X
       (or (string-match-p "\\cC+" next)
+          (string-match-p "\\cK+" next)
           (string-match-p (format "%s+" company-nihongo-alpha-regexp) next)))
      ((string-match-p "\\cK+" curr)
       ;; "katakana" + X
@@ -825,10 +840,8 @@ type."
                       (backward-word-strictly)
                       (while (re-search-forward regexp end t)
                         (setq word (match-string-no-properties 0))
-                        (unless (or (string-match-p "[・]\\{2,\\}+" word)
-                                    (string-match-p "^[・][^・]+" word))
-                          ;; Exclude words such as "アアアア・・・イイイイ" and
-                          ;; "・ウエオ"
+                        (unless (string-match-p "[・]" word)
+                          ;; Exclude words that contains "・".
                           (push word ret))
                         (cond
                          ((and
@@ -839,34 +852,95 @@ type."
                           ;; abc and def into ret as well.
                           (mapc (lambda (elt) (push elt ret))
                                 (split-string word "[_-]" t)))
-                         ((string-match-p "[・]\\{2,\\}" word)
-                          ;; split "アイアイ・・ウエウエ" into
-                          ;; "アイアイ" and "ウエウエ".
+                         ((string-match-p "[・]" word)
+                          ;; word must be Katakana word.
                           (mapc (lambda (elt)
-                                  (push elt ret)
-                                  (when (string-match-p "[^・]+[・][^・]+" elt)
-                                    (mapc (lambda (e)
-                                            (push e ret))
-                                          (split-string elt "[・]" t))))
-                                (split-string word "[・]\\{2,\\}" t)))
-                         ((string-match-p "^[・][^・]+$" word)
-                          ;; When word is "・コンピューター",
-                          ;; split this into "・" and "コンピューター".
-                          (push "・" ret)
-                          (push (substring word 1) ret))
-                         ((string-match-p "^[^・]+[・][^・]+$" word)
-                          ;; The case where word is somethig like "クーリング・オフ".
-                          ;; In this case, we put both "クーリング"
-                          ;; and "オフ" into ret as well as "クーリン
-                          ;; グ・オフ".
-                          ;; We have to push only each of splitted
-                          ;; words because concatenated word has
-                          ;; already been pushed.
-                          ;; word is guaranteed to be concatenated by
-                          ;; only one "・"
-                          (mapc (lambda (elt) (push elt ret))
-                                (split-string word "[・]" t)))))))
+                                    (push elt ret))
+                                (company-nihongo--split-kanakana-word word)))))))
     (nreverse ret)))
+
+;; (cl-defun company-nihongo--split-buffer-string (buffer &key
+;;                                                        (beg (point-min))
+;;                                                        (end (point-max)))
+;;   "Return a list of strings in buffer BUFFER, split by its character
+;; type."
+;;   (let ((ret nil)
+;;         (regexp (format "\\cH+\\|\\cK+\\|\\cC+\\|%s+\\|%s"
+;;                         company-nihongo-ascii-regexp
+;;                         company-nihongo-separator-regexp))
+;;         (word nil)
+;;         (end (save-excursion (goto-char end)
+;;                              ;; avoid situations where we are in the
+;;                              ;; middle of some word.
+;;                              (forward-word-strictly)
+;;                              (if (= (point) (point-max))
+;;                                  nil
+;;                                (1+ (point))))))
+;;     (with-current-buffer buffer
+;;       (save-excursion (goto-char beg)
+;;                       ;; avoid situations where we are in the middle
+;;                       ;; of some word, i.e.
+;;                       ;; match-string-no-properties
+;;                       ;;        ^
+;;                       ;;        |
+;;                       ;;      (point)
+;;                       (backward-word-strictly)
+;;                       (while (re-search-forward regexp end t)
+;;                         (setq word (match-string-no-properties 0))
+;;                         (unless (string-match-p "[・]" word)
+;;                           ;; Exclude words such as "アアアア・・・イイイイ",
+;;                           ;; "・ウエオ" and "カキク・ケコ".
+;;                           (push word ret))
+;;                         (cond
+;;                          ((and
+;;                            (string-match-p (format "^%s+$" company-nihongo-ascii-regexp)
+;;                                            word)
+;;                            (cl-find ?- word))
+;;                           ;; If word is like "abc-def", then we push
+;;                           ;; abc and def into ret as well.
+;;                           (mapc (lambda (elt) (push elt ret))
+;;                                 (split-string word "[_-]" t)))
+;;                          ((string-match-p "[・]" word)
+;;                           ;; word must be Katakana word.
+;;                           (mapc (lambda (elt)
+;;                                   (when (string-match-p "^[^・]+.*[・].*[^・]$" elt)
+;;                                     (push elt ret)))
+;;                                 (split-string word "・・" t))
+;;                           (mapc (lambda (elt)
+;;                                     (push elt ret))
+;;                                 (company-nihongo--process-kanakana-word word)))))))
+;;     (nreverse ret)))
+
+(defun company-nihongo--split-kanakana-word (word)
+  "Split katakana word WORD by \"・\" and return a list of split
+words."
+  (cl-loop with ret = nil
+           with cnt = 0
+           with acc = nil
+           ;; Replace three or more consective "・" with two "・", and
+           ;; process character by character.
+           for ch in (split-string (replace-regexp-in-string "[・]\\{3,\\}"
+                                                             "・・"
+                                                             word)
+                                   ""
+                                   t)
+           do (cond
+               ((string= ch "・")
+                (when acc
+                  (push (mapconcat #'identity (nreverse acc) "") ret)
+                  (setq acc nil))
+                (cl-incf cnt))
+               (t
+                (when (> cnt 0)
+                  (push (make-string cnt ?・) ret)
+                  (setq cnt 0))
+                (push ch acc)))
+           finally return
+           (progn (when acc
+                    (push (mapconcat #'identity (nreverse acc) "") ret))
+                  (when (> cnt 0)
+                    (push (make-string cnt ?・) ret))
+                  (nreverse ret))))
 
 (defun company-nihongo--check-index-cache-alist-idle-timer-func ()
   "Iterate through `company-nihongo--index-cache-alist' to see if
