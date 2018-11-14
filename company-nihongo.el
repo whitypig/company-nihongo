@@ -1031,6 +1031,7 @@ buffer from which this command is invoked is being highlighted."
                    :volatile t)))
 
 (defun company-nihongo-group-add-buffers-to-group ()
+  "Add buffers into a company-nihongo buffer group."
   (interactive)
   (cl-loop with grp-name = (company-nihongo--helm-select-group)
            with lst = (gethash grp-name company-nihongo--group-name-to-buffers-table)
@@ -1061,6 +1062,7 @@ buffer from which this command is invoked is being highlighted."
            company-nihongo--buffer-to-group-table))
 
 (defun company-nihongo-delete-buffers-in-group ()
+  "Interactively delete buffers in a company-nihongo group."
   (interactive)
   (cl-loop with grp-name = (company-nihongo--helm-select-group)
            with buffers = (gethash grp-name
@@ -1083,6 +1085,7 @@ buffer from which this command is invoked is being highlighted."
                                  grp-name))))
 
 (defun company-nihongo-group-delete-group ()
+  "Interactively delete company-nihongo groups."
   (interactive)
   (cl-loop with deleted-groups = nil
            for grp-name in (helm :buffer "Delete groups"
