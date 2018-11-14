@@ -255,3 +255,35 @@
   (should
    (equal (company-nihongo--process-kanakana-word "・キャピタル・ゲイン・・コレ・・")
           '("・" "キャピタル" "・" "ゲイン" "・・" "コレ" "・・"))))
+
+(ert-deftest company-nihongo--test-helm-format-buffer-title$ ()
+  (should
+   (string= (company-nihongo--helm-format-buffer-title "name" "location")
+            "name                                                  location"))
+  (should
+   (string= (company-nihongo--helm-format-buffer-title "very looooooooooooooooooooooooooooooooooooog name buffer" "location")
+            "very looooooooooooooooooooooooooooooooooooog na...    location"))
+  (should
+   (string= (company-nihongo--helm-format-buffer-title
+             "とっても長い日本語バッファ名のバッファだよ" "dir1")
+            "とっても長い日本語バッファ名のバッファだよ            dir1"))
+  (should
+   (string= (company-nihongo--helm-format-buffer-title
+             "ああああああああああああああいい" "dir")
+            "ああああああああああああああいい                      dir")))
+
+(ert-deftest company-nihongo--test-create-group$ ()
+  (let ((company-nihongo--group-name-to-buffers-table (make-hash-table :test #'equal))
+        (company-nihongo--buffer-to-group-table (make-hash-table :test #'equal))
+        (name "test-group1")
+        (buffers (cl-loop for i from 0 to 2
+                          collect (get-buffer-create
+                                   (format "*test-company-nihongo-%d*" i)))))
+    (company-nihongo-create-group name buffers)
+    (should (gethash name company-nihongo--group-name-to-buffers-table))
+    (cl-loop for b in buffers
+             do (should
+                 (equal (gethash b company-nihongo--buffer-to-group-table)
+                        (list name))))
+    ;; clean ups
+    (mapc #'kill-buffer buffers)))
