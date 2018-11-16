@@ -80,7 +80,10 @@ searched for candidates."
   :group 'company-nihongo)
 
 (defcustom company-nihongo-use-3-words-completion t
-  "TODO"
+  "By default, candidates returned by `company-nihongo' contains at
+most two types of strings. With this variable being t, however, some
+candidates could contain three types of strings depending on
+context."
   :type 'boolean
   :group 'company-nihongo)
 
@@ -91,14 +94,15 @@ is perfomed on [point - window-size, point + window-size]."
   :type 'integer
   :group 'company-nihongo)
 
+(defcustom company-nihongo-check-index-cache-interval 3600
+  "Every this value seconds, `company-nihongo--index-cache-alist' is
+checked if there is an entry for killed buffer.")
+
 (defcustom company-nihongo-use-consective-completion t
-  ""
+  "When this variable is t, after you choose a candidte, another
+completion automatically fires."
   :type 'boolean
   :group 'company-nihongo)
-
-;; (setq company-nihongo-searching-window-size 500)
-;; (setq company-nihongo-searching-window-size 1000)
-;; (setq company-nihongo-searching-window-size 2000)
 
 ;;; Variables
 
@@ -144,10 +148,10 @@ The key is a buffer and the value is a list of group names to which
 that buffer belongs.")
 
 (defvar company-nihongo--black-dot "・"
-  "")
+  "Black dot, which is called \"Kokuten\" in Japanese.")
 
 (defvar company-nihongo--two-black-dots "・・"
-  "")
+  "Two consective black dots.")
 
 ;;; Functions
 
@@ -281,15 +285,24 @@ of `char-before'."
 (defun company-nihongo--clear-not-found-state ()
   (setq company-nihongo--search-in-current-buffer-state nil))
 
+(defun company-nihongo--get-source-buffers (buffer others)
+  (cond
+   ((null others)
+    ;; OTHERS being nil has the highest priority.
+    (list buffer))
+   (t
+    ;; If BUFFER belongs to any groups, collect all the buffers in
+    ;; those groups.  Otherwise, just call
+    ;; 'company-nihongo-select-buffer-function.
+    (or (company-nihongo--get-member-buffers buffer)
+        (funcall company-nihongo-select-buffer-function)))))
+
 (cl-defun company-nihongo--get-candidates (prefix &optional (others t))
   "Return a list of candidates that begin with prefix PREFIX."
   (when (and prefix (> (length prefix) 0))
     (delete-dups
-     (sort (cl-loop for buf in (if others
-                                   ;; search all possible buffers
-                                   (funcall company-nihongo-select-buffer-function)
-                                 ;; search only current buffer
-                                 (list (current-buffer)))
+     (sort (cl-loop for buf in (company-nihongo--get-source-buffers (current-buffer)
+                                                                    others)
                     with limit = (or company-nihongo-limit
                                      20)
                     nconc (company-nihongo--get-candidates-1 prefix buf) into candidates
@@ -860,12 +873,12 @@ words."
            ;; Replace three or more consective "・" with two "・", and
            ;; process character by character.
            for ch in (split-string (replace-regexp-in-string "[・]\\{3,\\}"
-                                                             "・・"
+                                                             company-nihongo--two-black-dots
                                                              word)
                                    ""
                                    t)
            do (cond
-               ((string= ch "・")
+               ((string= ch company-nihongo--black-dot)
                 (when acc
                   (push (mapconcat #'identity (nreverse acc) "") ret)
                   (setq acc nil))
@@ -897,10 +910,6 @@ there is an entry for a killed bufer, and delete it if any."
   (run-with-idle-timer 10
                        nil
                        #'company-nihongo--check-index-cache-alist-idle-timer-func))
-
-(defcustom company-nihongo-check-index-cache-interval 3600
-  "Every this value seconds, `company-nihongo--index-cache-alist' is
-checked if there is an entry for killed buffer.")
 
 (defvar company-nihongo--check-index-cache-alist-timer
   (run-with-timer company-nihongo-check-index-cache-interval
@@ -944,7 +953,7 @@ checked if there is an entry for killed buffer.")
 
 (defun company-nihongo--helm-format-buffer-title (name dirname)
   (let* ((max-name-width 50)
-         (fmtstring (format "%%-%ds    %%s" max-name-width)))
+         (fmtstring (format "%%-%ds    (%%s)" max-name-width)))
     (format fmtstring
             (if (<= (string-width name) max-name-width)
                 name
@@ -1025,7 +1034,7 @@ buffer from which this command is invoked is being highlighted."
 
 (defun company-nihongo--helm-select-group ()
   (helm :buffer "Groups"
-        :sources (helm-build-sync-source "Choose a group."
+        :sources (helm-build-sync-source "Choose a group"
                    :candidates (company-nihongo--helm-get-group-candidates)
                    :migemo t
                    :volatile t)))
@@ -1111,6 +1120,14 @@ buffer from which this command is invoked is being highlighted."
 
 (defun company-nihongo--get-groups-by-buffer (buffer)
   (gethash buffer company-nihongo--buffer-to-group-table))
+
+(defun company-nihongo--get-member-buffers (buffer)
+  "Return a list of buffers that are in the same group as that of
+BUFFER, including BUFFER itself."
+  (cl-loop for grp-name in (company-nihongo--get-groups-by-buffer buffer)
+           nconc (gethash grp-name company-nihongo--group-name-to-buffers-table)
+           into ret
+           finally return (cl-delete-duplicates ret)))
 
 (defun company-nihongo--clear-group-tables ()
   (clrhash company-nihongo--group-name-to-buffers-table)
