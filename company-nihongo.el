@@ -292,7 +292,7 @@ of `char-before'."
     (list buffer))
    (t
     ;; If BUFFER belongs to any groups, collect all the buffers in
-    ;; those groups.  Otherwise, just call
+    ;; those groups. Otherwise, just call
     ;; 'company-nihongo-select-buffer-function.
     (or (company-nihongo--get-member-buffers buffer)
         (funcall company-nihongo-select-buffer-function)))))
@@ -991,31 +991,56 @@ there is an entry for a killed bufer, and delete it if any."
                     (buffer-name (current-buffer))
                     (buffer-file-name (current-buffer)))))
 
-(defun company-nihongo-group-create-new-group (name buffers)
-  "Create a new buffer group.
+(defun company-nihongo-group--join-group (buffer name)
+  "Add group named NAME to BUFFER's group list."
+  (let ((lst (gethash buffer company-nihongo--buffer-to-group-table))
+        (buffers (gethash name
+                          company-nihongo--group-name-to-buffers-table)))
+    (unless (member buffer buffers)
+      (puthash name (cons buffer buffers) company-nihongo--group-name-to-buffers-table))
+    (unless (member name lst)
+      (puthash buffer (cons name lst) company-nihongo--buffer-to-group-table))))
 
-First, enter a new group's name. Group names must be unique. Also
-empty string is not allowed.
+(defun company-nihongo-group-create-new-group (name this-buffer buffers)
+  "Create a new buffer group and associate THIS-BUFFER with BUFFERS in
+this group. Be careful that all buffers but THIS-BUFFER are NOT
+associated with the others.
 
-Then mark one or more buffers and hit enter. Be careful that only the
-marked buffers will go into this new group.
+First, enter a new group's name. Group names must be unique. Also,
+empty string is not allowed. Then mark one or more buffers and hit enter.
 
-Buffers are sorted by its directory name and the cursor is on the
-buffer from which this command is invoked is being highlighted."
+In helm buffer, buffers are sorted by its path name and the cursor is
+on the buffer from which this command is invoked, i.e. current
+buffer."
   (interactive (list (company-nihongo--read-group-name-from-minibuffer)
+                     (current-buffer)
                      (company-nihongo--helm-select-buffers)))
-  ;; create an entry in both of
-  ;; company-nihongo--group-name-to-buffers-table and
-  ;; company-nihongo--buffer-to-group-table.
+  ;; Make sure that there is no groups named NAME.
   (when (and (not (member name (company-nihongo--get-existing-group-names)))
              buffers)
-    (puthash name buffers company-nihongo--group-name-to-buffers-table)
-    (mapc (lambda (buffer)
-            (push name (gethash buffer company-nihongo--buffer-to-group-table)))
-          buffers)
+    (puthash name (cl-remove-duplicates (cons this-buffer buffers))
+             company-nihongo--group-name-to-buffers-table)
+    (puthash this-buffer (cons name
+                               (gethash this-buffer
+                                        company-nihongo--buffer-to-group-table))
+             company-nihongo--buffer-to-group-table)
     (message "Created group %s with %s"
              name
-             (mapconcat (lambda (b) (buffer-name b)) buffers ", "))))
+             (mapconcat (lambda (b) (buffer-name b))
+                        (cl-remove-duplicates (cons this-buffer buffers))
+                        ", "))))
+
+(defun company-nihongo-group-create-new-group-and-associate-all (name this-buffer buffers)
+  (interactive (list (company-nihongo--read-group-name-from-minibuffer)
+                     (current-buffer)
+                     (company-nihongo--helm-select-buffers)))
+  (when (not (member name (company-nihongo--get-existing-group-names)))
+    ;; associate each of buffers with the others in the same group.
+    (mapc (lambda (buffer)
+            (company-nihongo-group--join-group buffer name))
+          (cons this-buffer buffers))
+    (message "Associated %s in group %s"
+             (mapconcat #'buffer-name (cons this-buffer buffers) ", ") name)))
 
 (defun company-nihongo--helm-format-group-name (name buffers)
   (format "%-20s    %s"
@@ -1032,9 +1057,9 @@ buffer from which this command is invoked is being highlighted."
            (cons (company-nihongo--helm-format-group-name name buffers)
                  name)))
 
-(defun company-nihongo--helm-select-group ()
-  (helm :buffer "Groups"
-        :sources (helm-build-sync-source "Choose a group"
+(defun company-nihongo--helm-select-group (caption)
+  (helm :buffer "company-nihongo groups"
+        :sources (helm-build-sync-source caption
                    :candidates (company-nihongo--helm-get-group-candidates)
                    :migemo t
                    :volatile t)))
@@ -1042,76 +1067,78 @@ buffer from which this command is invoked is being highlighted."
 (defun company-nihongo-group-add-buffers-to-group ()
   "Add buffers into a company-nihongo buffer group."
   (interactive)
-  (cl-loop with grp-name = (company-nihongo--helm-select-group)
+  (cl-loop with grp-name = (company-nihongo--helm-select-group "To which group?")
            with lst = (gethash grp-name company-nihongo--group-name-to-buffers-table)
-           with added = nil
            for buffer in (and grp-name
                               (company-nihongo--helm-select-buffers))
-           ;; If this group doesn't have this buffer, add this buffer.
-           unless (member buffer lst)
-           do (progn
-                (push buffer (gethash grp-name
-                                      company-nihongo--group-name-to-buffers-table))
-                (push buffer added))
-           ;; If this buffer's group list desn't contain this group, add this group.
-           unless (member grp-name
-                          (gethash buffer
-                                   company-nihongo--buffer-to-group-table))
-           do (push grp-name (gethash buffer
-                                      company-nihongo--buffer-to-group-table))
-           finally (and added
-                        (message "Added %s to %s"
-                                  (mapconcat #'buffer-name added ", ")
-                                  grp-name))))
+           do (company-nihongo-group--join-group buffer grp-name)
+           finally (message "Now, group %s is (%s)"
+                            grp-name
+                            (mapconcat
+                             #'buffer-name
+                             (gethash grp-name
+                                      company-nihongo--group-name-to-buffers-table)
+                             ", "))))
 
-(defun company-nihongo--delete-group-by-buffer (group-name buffer)
+(defun company-nihongo-group--leave-group (buffer group-name)
   (puthash buffer (remove group-name
                           (gethash buffer
                                    company-nihongo--buffer-to-group-table))
-           company-nihongo--buffer-to-group-table))
+           company-nihongo--buffer-to-group-table)
+  (puthash group-name
+           (remove buffer
+                   (gethash group-name
+                            company-nihongo--group-name-to-buffers-table))
+           company-nihongo--group-name-to-buffers-table))
 
-(defun company-nihongo-delete-buffers-in-group ()
-  "Interactively delete buffers in a company-nihongo group."
-  (interactive)
-  (cl-loop with grp-name = (company-nihongo--helm-select-group)
-           with buffers = (gethash grp-name
-                                   company-nihongo--group-name-to-buffers-table)
-           with del-buffers = (and buffers (company-nihongo--helm-select-buffers buffers))
-           with new-buffers = (and del-buffers
+(defun company-nihongo-group-delete-buffers-in-group (group-name &optional del-buffers)
+  "Delete BUFFERS from group named GROUP-NAME."
+  (interactive (list (company-nihongo--helm-select-group "From which group")))
+  (cl-loop with del-buffers = (or del-buffers
+                                  (company-nihongo--helm-select-buffers
+                                   (gethash group-name
+                                            company-nihongo--group-name-to-buffers-table)))
+           with buffers = (gethash group-name company-nihongo--group-name-to-buffers-table)
+           with new-buffers = (and buffers
                                    (cl-set-difference buffers del-buffers))
            with cnt = 0
            initially (and del-buffers
-                          (puthash grp-name
+                          (puthash group-name
                                    new-buffers
                                    company-nihongo--group-name-to-buffers-table))
            for b in del-buffers
            do (progn
-                (company-nihongo--delete-group-by-buffer grp-name b)
+                (company-nihongo-group--leave-group b group-name)
                 (cl-incf cnt))
            finally (and (> cnt 0)
                         (message "Deleted %s from %s"
                                  (mapconcat #'buffer-name del-buffers ", ")
-                                 grp-name))))
+                                 group-name))))
 
-(defun company-nihongo-group-delete-group ()
+(defun company-nihongo-group-delete-group (names)
   "Interactively delete company-nihongo groups."
-  (interactive)
+  (interactive (list
+                (helm :buffer "Delete groups"
+                      :sources
+                      (helm-build-sync-source "Chosen groups will be deleted"
+                        :migemo t
+                        :volatile t
+                        :candidates (company-nihongo--helm-get-group-candidates)
+                        :action (helm-make-actions
+                                 "Default" (lambda ($_) (helm-marked-candidates)))))))
   (cl-loop with deleted-groups = nil
-           for grp-name in (helm :buffer "Delete groups"
-                              :sources
-                              (helm-build-sync-source "Chosen groups will be deleted"
-                                :migemo t
-                                :volatile t
-                                :candidates (company-nihongo--helm-get-group-candidates)
-                                :action (helm-make-actions
-                                         "Default" (lambda ($_) (helm-marked-candidates)))))
+           for grp-name in names
            for buffers = (gethash grp-name company-nihongo--group-name-to-buffers-table)
            do (progn
+                ;; delete name from group table
                 (remhash grp-name company-nihongo--group-name-to-buffers-table)
                 (push grp-name deleted-groups)
                 (mapc (lambda (b)
-                        (company-nihongo--delete-group-by-buffer grp-name b))
-                      buffers))
+                        (company-nihongo-group--leave-group b grp-name))
+                      buffers)
+                (ignore-errors
+                  (remhash grp-name
+                           company-nihongo--group-name-to-buffers-table)))
            finally (and deleted-groups
                         (message "Deleted %d group%s (%s)"
                                  (length deleted-groups)
@@ -1124,10 +1151,12 @@ buffer from which this command is invoked is being highlighted."
 (defun company-nihongo--get-member-buffers (buffer)
   "Return a list of buffers that are in the same group as that of
 BUFFER, including BUFFER itself."
-  (cl-loop for grp-name in (company-nihongo--get-groups-by-buffer buffer)
-           nconc (gethash grp-name company-nihongo--group-name-to-buffers-table)
+  (cl-loop with ret = nil
+           for grp-name in (company-nihongo--get-groups-by-buffer buffer)
+           append (gethash grp-name company-nihongo--group-name-to-buffers-table)
            into ret
-           finally return (cl-delete-duplicates ret)))
+           ;; Make BUFFER come first in ret
+           finally return (cons buffer (remove buffer (cl-remove-duplicates ret)))))
 
 (defun company-nihongo--clear-group-tables ()
   (clrhash company-nihongo--group-name-to-buffers-table)
