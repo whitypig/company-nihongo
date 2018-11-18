@@ -1149,14 +1149,19 @@ buffer."
   (gethash buffer company-nihongo--buffer-to-group-table))
 
 (defun company-nihongo--get-member-buffers (buffer)
-  "Return a list of buffers that are in the same group as that of
-BUFFER, including BUFFER itself."
+  "If BUFFER belongs to any group, return a list of buffers that are
+in the same group as that of BUFFER, including BUFFER
+itself. Otherwise return nil."
   (cl-loop with ret = nil
            for grp-name in (company-nihongo--get-groups-by-buffer buffer)
            append (gethash grp-name company-nihongo--group-name-to-buffers-table)
            into ret
-           ;; Make BUFFER come first in ret
-           finally return (cons buffer (remove buffer (cl-remove-duplicates ret)))))
+           ;; Make BUFFER come first in ret if ret is no-nil.
+           ;; Otherwise, return nil.
+           finally return (and ret
+                               (cons buffer
+                                     (remove buffer
+                                             (cl-remove-duplicates ret))))))
 
 (defun company-nihongo--clear-group-tables ()
   (clrhash company-nihongo--group-name-to-buffers-table)
