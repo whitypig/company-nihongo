@@ -127,6 +127,12 @@
       (should
        (equal (company-nihongo--split-buffer-string (current-buffer))
               '("キャピタル" "・" "ゲイン"))))
+    ;; (with-temp-buffer
+    ;;   (insert "abc:def:ghi")
+    ;;   (should
+    ;;    (should
+    ;;     (equal (company-nihongo--split-buffer-string (current-buffer))
+    ;;            '("abc:def:ghi" "abc" "def" "ghi")))))
     ))
 
 ;; (cl-loop for word in (company-nihongo--get-word-list (current-buffer))
@@ -239,38 +245,38 @@
       '("コンビネーション"))))
   (company-nihongo--clear-tables-for-buffer (company-nihongo--test-get-test-buffer)))
 
-(ert-deftest company-nihongo--test--process-katakana-word$ ()
-  (should
-   (equal (company-nihongo--process-kanakana-word "・・・アイウ・・エ・オ")
-          '("・・" "アイウ" "・・" "エ" "・" "オ")))
-  (should
-   (equal (company-nihongo--process-kanakana-word "・ハロー")
-          '("・" "ハロー")))
-  (should
-   (equal (company-nihongo--process-kanakana-word "・")
-          '("・")))
-  (should
-   (equal (company-nihongo--process-kanakana-word "キャピタル・ゲイン・・コレ")
-          '("キャピタル" "・" "ゲイン" "・・" "コレ")))
-  (should
-   (equal (company-nihongo--process-kanakana-word "・キャピタル・ゲイン・・コレ・・")
-          '("・" "キャピタル" "・" "ゲイン" "・・" "コレ" "・・"))))
+;; (ert-deftest company-nihongo--test--process-katakana-word$ ()
+;;   (should
+;;    (equal (company-nihongo--process-kanakana-word "・・・アイウ・・エ・オ")
+;;           '("・・" "アイウ" "・・" "エ" "・" "オ")))
+;;   (should
+;;    (equal (company-nihongo--process-kanakana-word "・ハロー")
+;;           '("・" "ハロー")))
+;;   (should
+;;    (equal (company-nihongo--process-kanakana-word "・")
+;;           '("・")))
+;;   (should
+;;    (equal (company-nihongo--process-kanakana-word "キャピタル・ゲイン・・コレ")
+;;           '("キャピタル" "・" "ゲイン" "・・" "コレ")))
+;;   (should
+;;    (equal (company-nihongo--process-kanakana-word "・キャピタル・ゲイン・・コレ・・")
+;;           '("・" "キャピタル" "・" "ゲイン" "・・" "コレ" "・・"))))
 
 (ert-deftest company-nihongo--test-helm-format-buffer-title$ ()
   (should
    (string= (company-nihongo--helm-format-buffer-title "name" "location")
-            "name                                                  location"))
+            "name                                                  (location)"))
   (should
    (string= (company-nihongo--helm-format-buffer-title "very looooooooooooooooooooooooooooooooooooog name buffer" "location")
-            "very looooooooooooooooooooooooooooooooooooog na...    location"))
+            "very looooooooooooooooooooooooooooooooooooog na...    (location)"))
   (should
    (string= (company-nihongo--helm-format-buffer-title
              "とっても長い日本語バッファ名のバッファだよ" "dir1")
-            "とっても長い日本語バッファ名のバッファだよ            dir1"))
+            "とっても長い日本語バッファ名のバッファだよ            (dir1)"))
   (should
    (string= (company-nihongo--helm-format-buffer-title
              "ああああああああああああああいい" "dir")
-            "ああああああああああああああいい                      dir")))
+            "ああああああああああああああいい                      (dir)")))
 
 (ert-deftest company-nihongo-group--test-create-new-group$ ()
   (let* ((company-nihongo--group-name-to-buffers-table (make-hash-table :test #'equal))
@@ -436,3 +442,14 @@
                                       (gethash b
                                                company-nihongo--buffer-to-group-table))))))
     (mapc #'kill-buffer all-buffers)))
+
+(ert-deftest company-nihongo--test-split-string$ ()
+  (should
+   (equal (company-nihongo--split-string "abc:def:ghi" "[:]+")
+          '("abc" ":" "def" ":" "ghi")))
+  (should
+   (equal (company-nihongo--split-string "abc:def:ghi" "[X]")
+          '("abc:def:ghi")))
+  (should
+   (equal (company-nihongo--split-string ":abc::def:::ghi::::" "[:]+")
+          '(":" "abc" "::" "def" ":::" "ghi" "::::"))))

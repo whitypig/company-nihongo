@@ -552,7 +552,15 @@ BUFFER."
   (cond
    ((string-match-p "^\\\\c" regexp)
     (replace-regexp-in-string "^\\\\c" "\\\\C" regexp))
+   ((and (not (string-match-p "\\[\\^.*\\]" regexp))
+         ;; not like ones such as "[^a]+"
+         (string-match "\\[\\([^]]+\\)\\]\\(.*\\)" regexp))
+    (format "[^%s]%s"
+            (match-string-no-properties 1 regexp)
+            (match-string-no-properties 2 regexp)))
    (t
+    ;; strip square brackets and prepend "^", then enclose square
+    ;; brackets.
     (format "[^%s]" (replace-regexp-in-string "\\[\\|\\]" "" regexp)))))
 
 (defun company-nihongo--make-regexp (prefix)
@@ -863,6 +871,42 @@ type."
                                     (push elt ret))
                                 (company-nihongo--split-kanakana-word word)))))))
     (nreverse ret)))
+
+(defun company-nihongo--get-extra-candidates (string separator)
+  (cl-loop with lst = (company-nihongo--split-string string separator)
+           for i from 0 below (length lst)
+           for l = (nthcdr i lst)
+           unless (string-match-p "[:]+" (car l))
+           append (cl-loop for elt in l
+                           for s = elt then (concat s elt)
+                           collect s)))
+
+(defun company-nihongo--split-string (string separator)
+  "Split STRING by SEPARATOR, which is regexp, and return a list of
+split strings including the separators in STRING."
+  (if (not (string-match-p separator string))
+      (list string)
+    (mapcar #'cdr
+            (cl-merge 'list
+                      (company-nihongo--split-string-2 string separator)
+                      (company-nihongo--split-string-2 string
+                                                       (company-nihongo--make-negate-regexp
+                                                        separator))
+                      #'<
+                      :key #'car))))
+
+(defun company-nihongo--split-string-2 (string separator)
+  (cl-loop with ret = nil
+           with start = 0
+           while (and
+                  (integerp start)
+                  (setq start (string-match separator
+                                            string
+                                            (+ start (length (cdar (last ret)))))))
+           collect (cons start (match-string-no-properties 0 string))
+           into ret
+           finally return ret))
+
 
 (defun company-nihongo--split-kanakana-word (word)
   "Split katakana word WORD by \"・\" and return a list of split
