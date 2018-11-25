@@ -872,18 +872,18 @@ type."
                                 (company-nihongo--split-kanakana-word word)))))))
     (nreverse ret)))
 
-(defun company-nihongo--get-extra-candidates (string separator)
+(defun company-nihongo--get-substrings-by-separators (string separator)
   (cl-loop with lst = (company-nihongo--split-string string separator)
            for i from 0 below (length lst)
            for l = (nthcdr i lst)
-           unless (string-match-p "[:]+" (car l))
+           unless (string-match-p separator (car l))
            append (cl-loop for elt in l
                            for s = elt then (concat s elt)
                            collect s)))
 
 (defun company-nihongo--split-string (string separator)
-  "Split STRING by SEPARATOR, which is regexp, and return a list of
-split strings including the separators in STRING."
+  "Split STRING by SEPARATOR, which can be a regexp, and return a list
+of split strings including the separators in STRING."
   (if (not (string-match-p separator string))
       (list string)
     (mapcar #'cdr
@@ -906,7 +906,6 @@ split strings including the separators in STRING."
            collect (cons start (match-string-no-properties 0 string))
            into ret
            finally return ret))
-
 
 (defun company-nihongo--split-kanakana-word (word)
   "Split katakana word WORD by \"・\" and return a list of split

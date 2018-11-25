@@ -452,4 +452,33 @@
           '("abc:def:ghi")))
   (should
    (equal (company-nihongo--split-string ":abc::def:::ghi::::" "[:]+")
-          '(":" "abc" "::" "def" ":::" "ghi" "::::"))))
+          '(":" "abc" "::" "def" ":::" "ghi" "::::")))
+  (should
+   (equal (company-nihongo--split-string "this_is__a___word" "[_]+")
+          '("this" "_" "is" "__" "a" "___" "word"))))
+
+(ert-deftest company-nihongo--test-get-substrings-by-separators$ ()
+  (should
+   (equal (company-nihongo--get-substrings-by-separators "abc:def::ghi" "[:]+")
+          '("abc" "abc:" "abc:def" "abc:def::" "abc:def::ghi"
+            "def" "def::" "def::ghi" "ghi")))
+  (should
+   (equal (company-nihongo--get-substrings-by-separators "abc:def::ghi" "[X]+")
+          '("abc:def::ghi")))
+  (should
+   (equal (company-nihongo--get-substrings-by-separators "abc:def-ghi" "[:-]+")
+          '("abc" "abc:" "abc:def" "abc:def-" "abc:def-ghi"
+            "def" "def-" "def-ghi"
+            "ghi")))
+  (should
+   (equal (company-nihongo--get-substrings-by-separators "this_is__a___word" "[_]+")
+          '("this" "this_" "this_is" "this_is__" "this_is__a" "this_is__a___" "this_is__a___word"
+            "is" "is__" "is__a" "is__a___" "is__a___word"
+            "a" "a___" "a___word"
+            "word")))
+  (should
+   (equal (company-nihongo--get-substrings-by-separators
+           "アイ・ウエ・・オ" "[・]+")
+          '("アイ" "アイ・" "アイ・ウエ" "アイ・ウエ・・" "アイ・ウエ・・オ"
+            "ウエ" "ウエ・・" "ウエ・・オ"
+            "オ"))))
