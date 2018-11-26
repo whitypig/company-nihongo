@@ -66,19 +66,32 @@
        (null (company-nihongo--get-candidates-in-current-buffer "する")))
       (company-nihongo--clear-tables-for-buffer (current-buffer)))
     (with-temp-buffer
+      (insert "abc:def:ghi")
+      (newline)
+      (insert ":x:y:z")
+      (newline)
+      (should
+       (equal (sort (company-nihongo--get-candidates-in-current-buffer "ab") #'string<)
+              (sort '("abc" "abc:" "abc:def" "abc:def:" "abc:def:ghi") #'string<)))
+      (company-nihongo--clear-tables-for-buffer (current-buffer)))
+    (with-temp-buffer
       (insert "キャピタル・ゲイン・・コレって連結される？")
       (should
        (null (company-nihongo--get-candidates-in-current-buffer "・")))
       (should
-       (equal (company-nihongo--get-candidates-in-current-buffer "キャ")
-              '("キャピタル" "キャピタル・ゲイン")))
+       (equal (sort (company-nihongo--get-candidates-in-current-buffer "キャ") #'string<)
+              (sort '("キャピタル" "キャピタル・" "キャピタル・ゲイン"
+                      "キャピタル・ゲイン・・" "キャピタル・ゲイン・・コレ"
+                      "キャピタル・ゲイン・・コレって")
+                    #'string<)))
       (company-nihongo--clear-tables-for-buffer (current-buffer)))
     (with-temp-buffer
       (insert "新・コンピューター")
       (should
        (equal (company-nihongo--get-candidates-in-current-buffer "コ")
               '("コンピューター")))
-      (company-nihongo--clear-tables-for-buffer (current-buffer)))))
+      (company-nihongo--clear-tables-for-buffer (current-buffer)))
+    ))
 
 (ert-deftest company-nihongo--test-split-buffer-string$ ()
   ""
@@ -132,7 +145,7 @@
     ;;   (should
     ;;    (should
     ;;     (equal (company-nihongo--split-buffer-string (current-buffer))
-    ;;            '("abc:def:ghi" "abc" "def" "ghi")))))
+    ;;            '()))))
     ))
 
 ;; (cl-loop for word in (company-nihongo--get-word-list (current-buffer))
@@ -466,6 +479,10 @@
    (equal (company-nihongo--get-substrings-by-separators "abc:def::ghi" "[X]+")
           '("abc:def::ghi")))
   (should
+   (equal (company-nihongo--get-substrings-by-separators ":abc:def:" "[:]+")
+          '("abc" "abc:" "abc:def" "abc:def:"
+            "def" "def:")))
+  (should
    (equal (company-nihongo--get-substrings-by-separators "abc:def-ghi" "[:-]+")
           '("abc" "abc:" "abc:def" "abc:def-" "abc:def-ghi"
             "def" "def-" "def-ghi"
@@ -476,6 +493,13 @@
             "is" "is__" "is__a" "is__a___" "is__a___word"
             "a" "a___" "a___word"
             "word")))
+  (should
+   (equal (company-nihongo--get-substrings-by-separators "アイ・ウエ・オカ・キク" "[・]+")
+          '("アイ" "アイ・" "アイ・ウエ" "アイ・ウエ・" "アイ・ウエ・オカ"
+            "アイ・ウエ・オカ・" "アイ・ウエ・オカ・キク"
+            "ウエ" "ウエ・" "ウエ・オカ" "ウエ・オカ・" "ウエ・オカ・キク"
+            "オカ" "オカ・" "オカ・キク"
+            "キク")))
   (should
    (equal (company-nihongo--get-substrings-by-separators
            "アイ・ウエ・・オ" "[・]+")

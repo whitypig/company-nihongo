@@ -59,7 +59,7 @@ searched for candidates."
   :type 'list
   :group 'company-nihongo)
 
-(defcustom company-nihongo-ascii-regexp "[0-9A-Za-z_-]"
+(defcustom company-nihongo-ascii-regexp "[0-9A-Za-z_:-]"
   "Regexp used to search for candidates that are not multibyte strings."
   :type 'regexp
   :group 'company-nihongo)
@@ -112,7 +112,10 @@ completion automatically fires."
 (defvar company-nihongo--hashtable-key-length 1
   "The length of key to hash table.")
 
-(defvar company-nihongo-alpha-regexp "[A-Za-z_-]"
+(defvar company-nihongo--alpha-regexp "[A-Za-z]"
+  "")
+
+(defvar company-nihongo--ascii-non-alpha "[:_-]"
   "")
 
 (defvar company-nihongo--search-in-current-buffer-state nil
@@ -270,12 +273,18 @@ of `char-before'."
           (backward-char))
         (unless (looking-at-p regexp)
           (forward-char))
-        (when (and (string= regexp "\\cK")
-                   (looking-at-p company-nihongo--black-dot))
+        (cond
+         ((and (string= regexp company-nihongo-ascii-regexp)
+               (looking-at-p company-nihongo--ascii-non-alpha))
+          (while (and (not (bobp))
+                      (looking-at-p company-nihongo--ascii-non-alpha))
+            (forward-char)))
+         ((and (string= regexp "\\cK")
+               (looking-at-p company-nihongo--black-dot))
           ;; remove leading "・" when regexp is for katakana words.
           (while (and (not (bobp))
                       (looking-at-p company-nihongo--black-dot))
-            (forward-char)))
+            (forward-char))))
         (buffer-substring-no-properties (point) pos)))))
 
 (defun company-nihongo--set-not-found-state (prefix buffer)
@@ -474,13 +483,15 @@ PREFIX."
       (company-nihongo--prepare-for-current-buffer-completion (current-buffer) (point))
       (when (company-nihongo--go-search-p prefix (current-buffer))
         ;; (message "DEBUG: in-current-buffer, prefix=%s, company-nihongo--not-found-prefix=%s" prefix company-nihongo--not-found-prefix)
-        (company-nihongo--search-candidates-in-buffer cand-regexp
+        (company-nihongo--search-candidates-in-buffer prefix
+                                                      cand-regexp
                                                       prefix-len
                                                       top
                                                       (1- pos)
                                                       limit
                                                       table)
-        (company-nihongo--search-candidates-in-buffer cand-regexp
+        (company-nihongo--search-candidates-in-buffer prefix
+                                                      cand-regexp
                                                       prefix-len
                                                       (1+ pos)
                                                       bottom
@@ -597,7 +608,7 @@ regexp in this cdr is colleted as a candidate."
                     (format non-prefix
                             (company-nihongo--make-negate-regexp "\\cH"))
                     prefix
-                    company-nihongo-alpha-regexp)))
+                    company-nihongo--alpha-regexp)))
      ((and (string-match-p "^\\cK+$" prefix)
            (not (string-match-p "^[・]" prefix)))
       ;; prefix is Katakana.
@@ -616,11 +627,13 @@ regexp in this cdr is colleted as a candidate."
      (t
       nil))))
 
-(defun company-nihongo--search-candidates-in-buffer (regexp min-len beg end limit table)
+(defun company-nihongo--search-candidates-in-buffer (prefix regexp min-len
+                                                            beg end limit table)
   "Search for strings that matches REGEXP in the region [BEG, END] in
 current buffer until it reaches END or the number of candidates found
 equals LIMIT."
-  (let ((cand nil))
+  (let ((cand nil)
+        (sep nil))
     (save-excursion
       (goto-char beg)
       (while (and (< (hash-table-count table) limit)
@@ -628,15 +641,47 @@ equals LIMIT."
                   ;; end) here to collect a candidate that just ends
                   ;; at (point-max)
                   (posix-search-forward regexp (1+ end) t))
-        ;; If matching string is "XXX・・・YYY", cut "・・・YYY" part
-        ;; so that words like "アイ・ウエ・・・オ" won't be included
-        ;; in candidates because we don't consider those words as
-        ;; proper nihongo words.
-        (setq cand (replace-regexp-in-string "[・]\\{2,\\}.*$"
-                                             ""
-                                             (match-string-no-properties 1)))
-        (when (< min-len (length cand))
-          (puthash cand t table))))))
+        ;; We have decided to consider words like "アイ・ウエ・・・オ"
+        ;; as a proper word, so we push those words into table. Also,
+        ;; we push substrings of those words into table.
+        (setq cand (match-string-no-properties 1))
+        (when (> (length cand) min-len)
+          (puthash cand t table)
+          (cl-loop with sep = (cond ((string-match-p "[・]" cand)
+                                     (setq sep "[・]+"))
+                                    ((string-match-p company-nihongo--ascii-non-alpha cand)
+                                     (setq sep (format "%s+"
+                                                       company-nihongo--ascii-non-alpha)))
+                                    (t
+                                     nil))
+                   for s in (and sep (company-nihongo--get-substrings-by-separators cand sep))
+                   for len = (length s)
+                   when (and (string-prefix-p prefix s)
+                             (> len min-len))
+                   do (puthash s t table)))))))
+
+;; (defun company-nihongo--search-candidates-in-buffer (prefix regexp min-len
+;;                                                             beg end limit table)
+;;   "Search for strings that matches REGEXP in the region [BEG, END] in
+;; current buffer until it reaches END or the number of candidates found
+;; equals LIMIT."
+;;   (let ((cand nil))
+;;     (save-excursion
+;;       (goto-char beg)
+;;       (while (and (< (hash-table-count table) limit)
+;;                   ;; Note: I don't know why but, we have to do (1+
+;;                   ;; end) here to collect a candidate that just ends
+;;                   ;; at (point-max)
+;;                   (posix-search-forward regexp (1+ end) t))
+;;         ;; If matching string is "XXX・・・YYY", cut "・・・YYY" part
+;;         ;; so that words like "アイ・ウエ・・・オ" won't be included
+;;         ;; in candidates because we don't consider those words as
+;;         ;; proper nihongo words.
+;;         (setq cand (replace-regexp-in-string "[・]\\{2,\\}.*$"
+;;                                              ""
+;;                                              (match-string-no-properties 1)))
+;;         (when (< min-len (length cand))
+;;           (puthash cand t table))))))
 
 (defun company-nihongo--get-possible-candidates (prefix buf)
   (gethash (substring-no-properties prefix
@@ -798,7 +843,7 @@ would-be candidates."
       ;; "hiragana" + X
       (or (string-match-p "\\cC+" next)
           (string-match-p "\\cK+" next)
-          (string-match-p (format "%s+" company-nihongo-alpha-regexp) next)))
+          (string-match-p (format "%s+" company-nihongo--alpha-regexp) next)))
      ((string-match-p "\\cK+" curr)
       ;; "katakana" + X
       (or (string-match-p "\\cH+" next)
@@ -820,7 +865,7 @@ candidate."
        ;; カタカナ+ひらがな+英数字
        (string-match-p "^\\cK+$" cur)
        (string-match-p "^\\cH+$" next1)
-       (string-match-p (format "^%s+$" company-nihongo-alpha-regexp) next2))
+       (string-match-p (format "^%s+$" company-nihongo--alpha-regexp) next2))
       t)
      (t
       nil))))
