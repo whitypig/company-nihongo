@@ -393,7 +393,9 @@ of `char-before'."
   (cl-loop with table = (make-hash-table :test #'equal)
            with inserted-words = (make-hash-table :test #'equal)
            for word in (company-nihongo--get-word-list buffer :beg beg :end end)
-           for key = (substring word 0 company-nihongo--hashtable-key-length)
+           for key = (substring word 0 (min
+                                        (length word)
+                                        company-nihongo--hashtable-key-length))
            when (and (> (length word) company-nihongo--hashtable-key-length)
                      (not (gethash word inserted-words nil)))
            if (gethash key table)
@@ -660,29 +662,6 @@ equals LIMIT."
                              (> len min-len))
                    do (puthash s t table)))))))
 
-;; (defun company-nihongo--search-candidates-in-buffer (prefix regexp min-len
-;;                                                             beg end limit table)
-;;   "Search for strings that matches REGEXP in the region [BEG, END] in
-;; current buffer until it reaches END or the number of candidates found
-;; equals LIMIT."
-;;   (let ((cand nil))
-;;     (save-excursion
-;;       (goto-char beg)
-;;       (while (and (< (hash-table-count table) limit)
-;;                   ;; Note: I don't know why but, we have to do (1+
-;;                   ;; end) here to collect a candidate that just ends
-;;                   ;; at (point-max)
-;;                   (posix-search-forward regexp (1+ end) t))
-;;         ;; If matching string is "XXX・・・YYY", cut "・・・YYY" part
-;;         ;; so that words like "アイ・ウエ・・・オ" won't be included
-;;         ;; in candidates because we don't consider those words as
-;;         ;; proper nihongo words.
-;;         (setq cand (replace-regexp-in-string "[・]\\{2,\\}.*$"
-;;                                              ""
-;;                                              (match-string-no-properties 1)))
-;;         (when (< min-len (length cand))
-;;           (puthash cand t table))))))
-
 (defun company-nihongo--get-possible-candidates (prefix buf)
   (gethash (substring-no-properties prefix
                                     0
@@ -789,6 +768,7 @@ would-be candidates."
            with acc = nil
            with dot-cnt = 0
            with word-cnt = 0
+           with w = nil
            for curr in lst
            for next1 in (append (cdr lst) '(nil))
            for next2 in (append (cddr lst) '(nil nil))
@@ -796,39 +776,54 @@ would-be candidates."
                 ;; take special care for katakana words
                 (cond
                  ((string= curr company-nihongo--black-dot)
-                  (and acc (push curr acc) (cl-incf dot-cnt)))
+                  (setq acc nil
+                        dot-cnt 0
+                        word-cnt 0))
                  ((string= curr company-nihongo--two-black-dots)
                   (setq acc nil
                         dot-cnt 0
                         word-cnt 0))
-                 ((string-match-p "^\\cK+$" curr)
-                  ;; Ordinary katakana word
-                  (push curr acc)
-                  (cl-incf word-cnt)
-                  ;; When lst is '("アイ" "・" "ウエ" ・ "オ"), we
-                  ;; want to make both of "アイ・ウエ" and "アイ・ウエ・
-                  ;; オ" candidates. That's why we have to check here
-                  ;; and there if acc could make a new candidte when
-                  ;; we push curr into acc.
-                  (when (< 0 dot-cnt word-cnt)
-                    (push (apply #'concat (reverse acc)) ret)))
+                 ((string-match-p "^\\cK+" curr)
+                  ;; cases for "イエス", "・アイテム", "アイ・ウエ・オ
+                  ;; カ・キク", and "ケコ・・・サシス".
+                  ;; remove leading and trailing black-dots if any.
+                  (setq curr (replace-regexp-in-string
+                              (format "\\(^[%s]+\\|[%s]+$\\)"
+                                      company-nihongo--black-dot
+                                      company-nihongo--black-dot)
+                              ""
+                              curr))
+                  ;; Here, curr contains at most one black dot in the
+                  ;; middle of itself.
+                  (mapc (lambda (s)
+                          (push s ret))
+                        (company-nihongo--get-substrings-by-separators
+                         curr (format "[%s]+" company-nihongo--black-dot))))
+                 ((string-match-p (format "%s+" company-nihongo-ascii-regexp) curr)
+                  (mapc (lambda (s)
+                          (push s ret))
+                        (company-nihongo--get-substrings-by-separators
+                         curr (format "%s+" company-nihongo--ascii-non-alpha))))
                  (t
                   ;; other kinds of words
                   (setq acc nil
                         dot-cnt 0
-                        word-cnt 0)))
-                ;; normal processing
-                (unless (string-match-p sep-regexp curr)
-                  (push curr ret)
-                  (when (company-nihongo--is-connected-p curr next1 sep-regexp)
-                    (push (concat curr next1) ret))
-                  (when (and company-nihongo-use-3-words-completion
-                             (company-nihongo--is-3-consective-p curr
-                                                                 next1
-                                                                 next2
-                                                                 sep-regexp))
-                    (push (concat curr next1 next2) ret))))
+                        word-cnt 0)
+                  ;; normal processing
+                  (unless (string-match-p sep-regexp curr)
+                    (push curr ret))))
+                (when (company-nihongo--is-connected-p curr next1 sep-regexp)
+                  (push (concat curr next1) ret))
+                (when (and company-nihongo-use-3-words-completion
+                           (company-nihongo--is-3-consective-p curr
+                                                               next1
+                                                               next2
+                                                               sep-regexp))
+                  (push (concat curr next1 next2) ret)))
            finally return ret))
+
+(defun company-nihongo--has-leading-black-dot-p (string)
+  (string-match-p (format "^%s" company-nihongo--black-dot) string))
 
 (defun company-nihongo--is-connected-p (curr next separator-regexp)
   (when (and (stringp curr)
@@ -842,16 +837,20 @@ would-be candidates."
      ((string-match-p "\\cH+" curr)
       ;; "hiragana" + X
       (or (string-match-p "\\cC+" next)
-          (string-match-p "\\cK+" next)
+          (and (not (company-nihongo--has-leading-black-dot-p next))
+               (string-match-p "\\cK+" next))
           (string-match-p (format "%s+" company-nihongo--alpha-regexp) next)))
-     ((string-match-p "\\cK+" curr)
+     ((and (not (company-nihongo--has-leading-black-dot-p curr))
+           (not (string-match-p company-nihongo--two-black-dots curr))
+           (string-match-p "\\cK+" curr))
       ;; "katakana" + X
       (or (string-match-p "\\cH+" next)
           (string-match-p "\\cC+" next)))
      ((string-match-p "\\cC+" curr)
       ;; "kanji" + X
       (or (string-match-p "\\cH+" next)
-          (string-match-p "\\cK+" next))))))
+          (and (not (company-nihongo--has-leading-black-dot-p next))
+               (string-match-p "\\cK+" next)))))))
 
 (defun company-nihongo--is-3-consective-p (cur next1 next2 sep-regexp)
   "Return t if a concatenated word CUR + NEXT1 + NEXT2 can be a
@@ -898,23 +897,16 @@ type."
                       (backward-word-strictly)
                       (while (re-search-forward regexp end t)
                         (setq word (match-string-no-properties 0))
-                        (unless (string-match-p "[・]" word)
-                          ;; Exclude words that contains "・".
-                          (push word ret))
                         (cond
-                         ((and
-                           (string-match-p (format "^%s+$" company-nihongo-ascii-regexp)
-                                           word)
-                           (cl-find ?- word))
-                          ;; If word is like "abc-def", then we push
-                          ;; abc and def into ret as well.
-                          (mapc (lambda (elt) (push elt ret))
-                                (split-string word "[_-]" t)))
-                         ((string-match-p "[・]" word)
-                          ;; word must be Katakana word.
+                         ((string-match-p company-nihongo--two-black-dots word)
                           (mapc (lambda (elt)
-                                    (push elt ret))
-                                (company-nihongo--split-kanakana-word word)))))))
+                                  (push elt ret))
+                                (company-nihongo--split-string
+                                 word
+                                 (format "[%s]\\{2,\\}"
+                                         company-nihongo--black-dot))))
+                         (t
+                          (push word ret))))))
     (nreverse ret)))
 
 (defun company-nihongo--get-substrings-by-separators (string separator)
@@ -932,13 +924,23 @@ of split strings including the separators in STRING."
   (if (not (string-match-p separator string))
       (list string)
     (mapcar #'cdr
-            (cl-merge 'list
-                      (company-nihongo--split-string-2 string separator)
-                      (company-nihongo--split-string-2 string
-                                                       (company-nihongo--make-negate-regexp
-                                                        separator))
-                      #'<
-                      :key #'car))))
+            (cl-merge
+             'list
+             ;; locate separators
+             (company-nihongo--split-string-2 string separator)
+             ;; locate non-separators
+             (cl-loop with ret = nil
+                      with lst = (split-string string separator t)
+                      for elt in lst
+                      for start = 0 then (string-match-p (regexp-quote elt)
+                                                         string
+                                                         (+ start
+                                                            (length (cdar (last ret)))))
+                      when start
+                      collect (cons start elt) into ret
+                      finally return ret)
+             #'<
+             :key #'car))))
 
 (defun company-nihongo--split-string-2 (string separator)
   (cl-loop with ret = nil
