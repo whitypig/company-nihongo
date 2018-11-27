@@ -258,22 +258,22 @@
       '("コンビネーション"))))
   (company-nihongo--clear-tables-for-buffer (company-nihongo--test-get-test-buffer)))
 
-;; (ert-deftest company-nihongo--test--process-katakana-word$ ()
-;;   (should
-;;    (equal (company-nihongo--process-kanakana-word "・・・アイウ・・エ・オ")
-;;           '("・・" "アイウ" "・・" "エ" "・" "オ")))
-;;   (should
-;;    (equal (company-nihongo--process-kanakana-word "・ハロー")
-;;           '("・" "ハロー")))
-;;   (should
-;;    (equal (company-nihongo--process-kanakana-word "・")
-;;           '("・")))
-;;   (should
-;;    (equal (company-nihongo--process-kanakana-word "キャピタル・ゲイン・・コレ")
-;;           '("キャピタル" "・" "ゲイン" "・・" "コレ")))
-;;   (should
-;;    (equal (company-nihongo--process-kanakana-word "・キャピタル・ゲイン・・コレ・・")
-;;           '("・" "キャピタル" "・" "ゲイン" "・・" "コレ" "・・"))))
+(ert-deftest company-nihongo--test--split-katakana-word$ ()
+  (should
+   (equal (company-nihongo--split-kanakana-word "・・・アイウ・・エ・オ")
+          '("・・" "アイウ" "・・" "エ" "・" "オ")))
+  (should
+   (equal (company-nihongo--split-kanakana-word "・ハロー")
+          '("・" "ハロー")))
+  (should
+   (equal (company-nihongo--split-kanakana-word "・")
+          '("・")))
+  (should
+   (equal (company-nihongo--split-kanakana-word "キャピタル・ゲイン・・コレ")
+          '("キャピタル" "・" "ゲイン" "・・" "コレ")))
+  (should
+   (equal (company-nihongo--split-kanakana-word "・キャピタル・ゲイン・・コレ・・")
+          '("・" "キャピタル" "・" "ゲイン" "・・" "コレ" "・・"))))
 
 (ert-deftest company-nihongo--test-helm-format-buffer-title$ ()
   (should
