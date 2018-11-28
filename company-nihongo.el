@@ -156,6 +156,9 @@ that buffer belongs.")
 (defvar company-nihongo--two-black-dots "・・"
   "Two consective black dots.")
 
+(defvar company-nihongo--friend-buffers-table (make-hash-table :test #'eq)
+  "")
+
 ;;; Functions
 
 (defun company-nihongo-compare-candidates (a b)
@@ -212,6 +215,16 @@ buffer."
                         (memq (buffer-local-value 'major-mode buf)
                               target-major-modes))
                       (buffer-list))))
+
+(defun company-nihongo-select-target-mode-buffers-plus-friends ()
+  "Return friend buffers and ones which are the same major-mode as
+that of current buffer."
+  (append (company-nihongo--get-friend-buffers (current-buffer))
+          (company-nihongo-select-target-mode-buffers)))
+
+(defun company-nihongo-select-friend-buffers ()
+  "Return a list of buffers which are friend with current buffer."
+  (company-nihongo--get-friend-buffers (current-buffer)))
 
 (defun company-nihongo--get-regexp ()
   "Return regexp to be used to determine prefix depending on the type
@@ -1256,6 +1269,71 @@ itself. Otherwise return nil."
 (defun company-nihongo--clear-group-tables ()
   (clrhash company-nihongo--group-name-to-buffers-table)
   (clrhash company-nihongo--buffer-to-group-table))
+
+;;; Friend buffers management
+
+;; Assume that bufferA has friend buffers (bufferB bufferC bufferD).
+;; Then, candidates for auto-completion while editing bufferA will
+;; also be collected from bufferB, bufferC, and bufferD.
+;; Friend buffers can be helpful if you need candidates from buffers
+;; other than those returned by calling
+;; 'company-nihongo-select-buffer-function.
+
+(defun company-nihongo--get-friend-buffers (buffer)
+  (gethash buffer company-nihongo--friend-buffers-table nil))
+
+(defun company-nihongo-make-friend-buffers (buffers)
+  "Choose buffers through `helm' and become friends with them.
+
+Chosen buffers are added to the list of friend buffers of the buffer
+from which this command has been invoked."
+  (interactive (list (company-nihongo--helm-select-buffers)))
+  ;; choose buffers.
+  (cl-loop with key-buffer = (current-buffer)
+           with lst = nil
+           for buffer in buffers
+           do (push buffer
+                    (gethash key-buffer
+                             company-nihongo--friend-buffers-table))
+           ;; remove duplicates if any.
+           finally (progn
+                     (puthash key-buffer
+                              (cl-remove-duplicates
+                               (gethash key-buffer
+                                        company-nihongo--friend-buffers-table))
+                              company-nihongo--friend-buffers-table)
+                     (message "Current friends: %s"
+                              (mapconcat #'buffer-name
+                                         (company-nihongo--get-friend-buffers
+                                          (current-buffer))
+                                         ", ")))))
+
+(defun company-nihongo-delete-friend-buffers (buffers)
+  "Break up with BUFFERS."
+  (interactive (list
+                (and (company-nihongo--get-friend-buffers (current-buffer))
+                     (company-nihongo--helm-select-buffers
+                      (company-nihongo--get-friend-buffers (current-buffer))))))
+  (if (null buffers)
+      (message "There is no friend buffer to break up with")
+    (let ((new-friends (cl-set-difference
+                        (company-nihongo--get-friend-buffers (current-buffer))
+                        buffers)))
+      (puthash (current-buffer)
+               new-friends
+               company-nihongo--friend-buffers-table)
+      (message "%s"
+               (if (null (company-nihongo--get-friend-buffers (current-buffer)))
+                   "Now, we have become alone"
+                 (format "Current friends: %s"
+                         (mapconcat #'buffer-name
+                                    (company-nihongo--get-friend-buffers
+                                     (current-buffer))
+                                    ", ")))))))
+
+(defun company-nihongo--reset-friend-buffers-table ()
+  (interactive)
+  (clrhash company-nihongo--friend-buffers-table))
 
 (defun company-nihongo--clear-tables-for-buffer (buffer)
   (remhash buffer company-nihongo--last-edit-tick-table)

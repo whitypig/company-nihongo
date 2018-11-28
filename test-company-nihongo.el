@@ -533,3 +533,42 @@
           '("アイ" "アイ・" "アイ・ウエ" "アイ・ウエ・・" "アイ・ウエ・・オ"
             "ウエ" "ウエ・・" "ウエ・・オ"
             "オ"))))
+
+(ert-deftest company-nihongo--test-make-friend-buffers$ ()
+  (let ((company-nihongo--friend-buffers-table (make-hash-table :test #'eq))
+        (buf (get-buffer-create "*company-nihongo-its-me-bro*"))
+        (friends
+         (cl-loop for i from 1 to 3
+                  collect
+                  (get-buffer-create (format "*company-nihongo-friend%d*" i)))))
+    (cl-flet ((sorter (lambda (a b)
+                        (string< (buffer-name a) (buffer-name b)))))
+      (with-current-buffer buf
+        (company-nihongo-make-friend-buffers friends))
+      (should
+       (equal (sort (company-nihongo--get-friend-buffers buf) #'sorter)
+              (sort friends #'sorter)))
+      (mapc #'kill-buffer (append (list buf) friends)))))
+
+(ert-deftest company-nihongo--test-delete-friend-buffers$ ()
+  (let ((company-nihongo--friend-buffers-table (make-hash-table :test #'eq))
+        (buf (get-buffer-create "*company-nihongo-its-me-bro*"))
+        (friends
+         (cl-loop for i from 1 to 3
+                  collect
+                  (get-buffer-create (format "*company-nihongo-friend%d*" i)))))
+    (cl-flet ((sorter (lambda (a b)
+                        (string< (buffer-name a) (buffer-name b)))))
+      (with-current-buffer buf
+        (company-nihongo-make-friend-buffers friends)
+        ;; break up with friend2 and friend3.
+        (company-nihongo-delete-friend-buffers (cdr friends))
+        (should
+         (equal (sort (company-nihongo--get-friend-buffers buf) #'sorter)
+                (sort (append (list (car friends))) #'sorter)))
+        ;; then also break up with friend1.
+        (company-nihongo-delete-friend-buffers
+         (list (get-buffer-create "*company-nihongo-friend1*")))
+        (should
+         (null (company-nihongo--get-friend-buffers (current-buffer)))))
+      (mapc #'kill-buffer (append (list buf) friends)))))
