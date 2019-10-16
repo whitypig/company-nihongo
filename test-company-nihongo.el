@@ -90,8 +90,19 @@
       (should
        (equal (company-nihongo--get-candidates-in-current-buffer "コ")
               '("コンピューター")))
-      (company-nihongo--clear-tables-for-buffer (current-buffer)))
-    ))
+      (company-nihongo--clear-tables-for-buffer (current-buffer)))))
+
+(ert-deftest company-nihongo--test-get-candidates-in-current-buffer-substring$ ()
+  (with-temp-buffer
+    (insert "evaluation")
+    (newline)
+    (insert "evaluation")
+    (newline)
+    (insert "evaluation")
+    (newline)
+    (should
+     (null (company-nihongo--get-candidates-in-buffer "alu" (current-buffer))))
+    (company-nihongo--clear-tables-for-buffer (current-buffer))))
 
 (ert-deftest company-nihongo--test-split-buffer-string$ ()
   ""

@@ -595,8 +595,9 @@ BUFFER."
 cell, whose car is the type of character that represents prefix, and
 cdr is also a regexp used to search for candidates. The first group in
 regexp in this cdr is colleted as a candidate."
-  (let ((non-prefix "\\(?:%s\\|\\b\\|\\B\\)")
-        ;; (non-prefix "\\(?:%s\\|\\b\\)")
+  (let (
+        ;; (non-prefix "\\(?:%s\\|\\b\\|\\B\\)")
+        (non-prefix "\\(?:%s\\|\\b\\)")
         )
     (cond
      ((string-match-p (format "^%s+$" company-nihongo-ascii-regexp) prefix)
@@ -649,6 +650,8 @@ current buffer until it reaches END or the number of candidates found
 equals LIMIT."
   (let ((cand nil)
         (sep nil))
+    ;; (message "DEBUG: prefix=%s regexp=%s min-len=%d beg=%d end=%d"
+    ;;          prefix regexp min-len beg end)
     (save-excursion
       (goto-char beg)
       (while (and (< (hash-table-count table) limit)
@@ -1273,11 +1276,18 @@ itself. Otherwise return nil."
 ;;; Friend buffers management
 
 ;; Assume that bufferA has friend buffers (bufferB bufferC bufferD).
-;; Then, candidates for auto-completion while editing bufferA will
-;; also be collected from bufferB, bufferC, and bufferD.
+;; Then, candidates for completion while editing bufferA will also be
+;; collected from bufferB, bufferC, and bufferD.
+;;
 ;; Friend buffers can be helpful if you need candidates from buffers
 ;; other than those returned by calling
 ;; 'company-nihongo-select-buffer-function.
+;;
+;; Note that this relation is unilateral, NOT bilateral. This means
+;; that, in the above example, bufferB, bufferC, and bufferD are
+;; source buffers for completion in bufferA, but does not necessarily
+;; mean that bufferA is a source buffer for bufferB, buferC, or
+;; bufferD.
 
 (defun company-nihongo--get-friend-buffers (buffer)
   (gethash buffer company-nihongo--friend-buffers-table nil))
