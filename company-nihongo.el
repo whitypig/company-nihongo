@@ -692,10 +692,12 @@ equals LIMIT."
            ;; gethash above returns a sorted list of candidates.
            ;; So, if (string> prefix cand) returns t, this means that
            ;; we have past over possible candidates.
-           ;; (b bb bba bbb bbc bbca bbcb ...)
-           ;;    ^           ^
-           ;;    |           |
-           ;; prefix = "bb"  last="bbc", prefix > last
+           ;; (b bb bba bbb bbc bbca bbcb bcaa ...   bye)
+           ;;    ^           ^             ^          ^
+           ;;    |           |             |          |
+           ;; prefix="bb"  last="bbc"   cand="bcaa"  last <  prefix="bz"
+           ;; If prefix > last, PREFIX cannot become a prefix of any
+           ;; of words in possible-candidates.
            with candidates = nil
            with already-found = nil
            with prefix-len = (length prefix)
@@ -705,6 +707,9 @@ equals LIMIT."
            do (progn (or already-found (setq already-found t))
                      (push cand candidates))
            else if already-found
+           ;; We have found some candidates so far, but the remaining
+           ;; elements in possible-candidates do not begin with
+           ;; PREFIX. Therefore we stop searching.
            return candidates
            finally return candidates))
 
