@@ -45,13 +45,6 @@ this regexp are excluded from candidates."
   :type 'regexp
   :group 'company-nihongo)
 
-;; (defcustom company-nihongo-select-buffer-function
-;;   #'company-nihongo-select-target-mode-buffers
-;;   "A function that returns a list of buffers. Those buffers are
-;; searched for candidates."
-;;   :type 'symbol
-;;   :group 'company-nihongo)
-
 (defcustom company-nihongo-select-buffer-function-list
   '(company-nihongo-select-target-mode-buffers
     company-nihongo-select-friend-buffers
@@ -212,19 +205,6 @@ that buffer belongs.")
 ;;      (t
 ;;       (string< a b)))))
 
-;; (defun company-nihongo-select-target-mode-buffers ()
-;;   "Return buffers that have the same major mode as that of current
-;; buffer."
-;;   (let ((target-major-modes (or (cl-find-if
-;;                                  (lambda (elt)
-;;                                    (memq major-mode elt))
-;;                                  company-nihongo-mode-group-list)
-;;                                 (list major-mode))))
-;;     (cl-remove-if-not (lambda (buf)
-;;                         (memq (buffer-local-value 'major-mode buf)
-;;                               target-major-modes))
-;;                       (buffer-list))))
-
 (defun company-nihongo-select-target-mode-buffers (_unused)
   "Return buffers that have the same major mode as that of current
 buffer."
@@ -236,7 +216,7 @@ buffer."
     (cl-remove-if-not (lambda (buf)
                         (memq (buffer-local-value 'major-mode buf)
                               target-major-modes))
-                      (buffer-list))))
+                      (company-nihongo--buffer-list))))
 
 (defun company-nihongo-select-friend-buffers (buffer)
   "Return a list of buffers which are friend with current buffer."
@@ -246,12 +226,6 @@ buffer."
   "Return a list of member buffers in the same group as the one
 current buffer belongs to."
   (company-nihongo--get-member-buffers buffer))
-
-;; (defun company-nihongo-select-target-mode-buffers-plus-friends ()
-;;   "Return friend buffers and ones which are the same major-mode as
-;; that of current buffer."
-;;   (append (company-nihongo--get-friend-buffers (current-buffer))
-;;           (company-nihongo-select-target-mode-buffers)))
 
 (defun company-nihongo--get-regexp ()
   "Return regexp to be used to determine prefix depending on the type
@@ -334,20 +308,6 @@ of `char-before'."
 (defun company-nihongo--clear-not-found-state ()
   (setq company-nihongo--search-in-current-buffer-state nil))
 
-;; Original
-;; (defun company-nihongo--get-source-buffers (buffer others)
-;;   (cond
-;;    ((null others)
-;;     ;; OTHERS being nil has the highest priority. In this case, BUFFER
-;;     ;; is the only source buffer.
-;;     (list buffer))
-;;    (t
-;;     ;; If BUFFER belongs to any groups, collect all the buffers in
-;;     ;; those groups. Otherwise, just call
-;;     ;; 'company-nihongo-select-buffer-function.
-;;     (or (company-nihongo--get-member-buffers buffer)
-;;         (funcall company-nihongo-select-buffer-function)))))
-
 (cl-defun company-nihongo--get-source-buffers (buffer &key (others t))
   (cond
    ((null others)
@@ -363,21 +323,6 @@ of `char-before'."
              append (funcall fn buffer) into buffers
              finally return
              (cl-remove-duplicates buffers)))))
-
-;; (cl-defun company-nihongo--get-candidates (prefix &optional (others t))
-;;   "Return a list of candidates that begin with prefix PREFIX."
-;;   (when (and prefix (> (length prefix) 0))
-;;     (delete-dups
-;;      (sort (cl-loop for buf in (company-nihongo--get-source-buffers (current-buffer)
-;;                                                                     others)
-;;                     with limit = (or company-nihongo-limit
-;;                                      20)
-;;                     nconc (company-nihongo--get-candidates-1 prefix buf) into candidates
-;;                     when (and (integerp limit)
-;;                               (> (length candidates) company-nihongo-limit))
-;;                     return candidates
-;;                     finally return candidates)
-;;            company-nihongo-candidate-sorter))))
 
 (cl-defun company-nihongo--get-candidates (prefix &optional (others t))
   "Return a list of candidates that begin with prefix PREFIX."
@@ -1210,16 +1155,6 @@ buffer."
                         (gethash name company-nihongo--group-name-to-buffers-table)
                         ", "))))
 
-;; (defun company-nihongo-group--join-group (buffer name)
-;;   "Add group named NAME to BUFFER's group list."
-;;   (let ((lst (gethash buffer company-nihongo--buffer-to-group-table))
-;;         (buffers (gethash name
-;;                           company-nihongo--group-name-to-buffers-table)))
-;;     (unless (member buffer buffers)
-;;       (puthash name (cons buffer buffers) company-nihongo--group-name-to-buffers-table))
-;;     (unless (member name lst)
-;;       (puthash buffer (cons name lst) company-nihongo--buffer-to-group-table))))
-
 (defun company-nihongo-add-buffers-to-group (group-name buffers)
   "Add buffers into a company-nihongo buffer group."
   (interactive (list (company-nihongo--helm-select-group "Group name: ")
@@ -1261,25 +1196,14 @@ member of the group whose name is NAME."
         (puthash buffer
                  (cons group-name group-names)
                  company-nihongo--buffer-to-group-table)))
-    (when (company-nihongo-group--group-member-p buffer group-name)
+    (when (and (called-interactively-p 'interactive)
+               (company-nihongo-group--group-member-p buffer group-name))
       (message "Buffer %s has become a member of %s"
-               (buffer-name buffer) group-name)))))
+                (buffer-name buffer) group-name)))))
 
 (defun company-nihongo-group--group-member-p (buffer group-name)
   (member group-name
           (gethash buffer company-nihongo--buffer-to-group-table)))
-
-;; (defun company-nihongo-group-create-new-group-and-associate-all (name this-buffer buffers)
-;;   (interactive (list (company-nihongo--read-group-name-from-minibuffer)
-;;                      (current-buffer)
-;;                      (company-nihongo--helm-select-buffers)))
-;;   (when (not (member name (company-nihongo--get-existing-group-names)))
-;;     ;; associate each of buffers with the others in the same group.
-;;     (mapc (lambda (buffer)
-;;             (company-nihongo-group--join-group buffer name))
-;;           (cons this-buffer buffers))
-;;     (message "Associated %s in group %s"
-;;              (mapconcat #'buffer-name (cons this-buffer buffers) ", ") name)))
 
 (defun company-nihongo--helm-format-group-name (name buffers)
   (format "%-20s    %s"
@@ -1346,11 +1270,13 @@ member of the group whose name is NAME."
                         (gethash group-name
                                  company-nihongo--group-name-to-buffers-table))
              company-nihongo--group-name-to-buffers-table)
-    (message "Buffer %s's groups has become (%s)"
-             (buffer-name buffer)
-             (mapconcat #'identity
-                        (gethash buffer company-nihongo--buffer-to-group-table)
-                        ", ")))))
+    (and
+     (called-interactively-p 'interactive)
+     (message "Buffer %s's groups has become (%s)"
+              (buffer-name buffer)
+              (mapconcat #'identity
+                         (gethash buffer company-nihongo--buffer-to-group-table)
+                         ", "))))))
 
 (defun company-nihongo-group-delete-buffers-in-group (group-name &optional del-buffers)
   "Delete BUFFERS from group named GROUP-NAME."
@@ -1376,36 +1302,6 @@ member of the group whose name is NAME."
                                  (mapconcat #'buffer-name del-buffers ", ")
                                  group-name))))
 
-;; (defun company-nihongo-delete-group (names)
-;;   "Interactively delete company-nihongo buffer groups."
-;;   (interactive (list
-;;                 (helm :buffer "Delete groups"
-;;                       :sources
-;;                       (helm-build-sync-source "Chosen groups will be deleted"
-;;                         :migemo t
-;;                         :volatile t
-;;                         :candidates (company-nihongo--helm-get-group-candidates)
-;;                         :action (helm-make-actions
-;;                                  "Default" (lambda ($_) (helm-marked-candidates)))))))
-;;   (cl-loop with deleted-groups = nil
-;;            for grp-name in names
-;;            for buffers = (gethash grp-name company-nihongo--group-name-to-buffers-table)
-;;            do (progn
-;;                 ;; delete name from group table
-;;                 (remhash grp-name company-nihongo--group-name-to-buffers-table)
-;;                 (push grp-name deleted-groups)
-;;                 (mapc (lambda (b)
-;;                         (company-nihongo-group--leave-group b grp-name))
-;;                       buffers)
-;;                 (ignore-errors
-;;                   (remhash grp-name
-;;                            company-nihongo--group-name-to-buffers-table)))
-;;            finally (and deleted-groups
-;;                         (message "Deleted %d group%s (%s)"
-;;                                  (length deleted-groups)
-;;                                  (if (= 1 (length deleted-groups)) "" "s")
-;;                                  (mapconcat #'identity deleted-groups ", ")))))
-
 (defun company-nihongo-delete-group (group-names)
   "Interactively delete company-nihongo buffer groups."
   (interactive (list
@@ -1424,7 +1320,8 @@ member of the group whose name is NAME."
     (cl-loop for group-name in group-names
              do (progn
                   (company-nihongo-group--delete-group group-name)
-                  (message "Deleted group %s" group-name))))))
+                  (and (called-interactively-p 'interactive)
+                       (message "Deleted group %s" group-name)))))))
 
 (defun company-nihongo-group--delete-group (group-name)
   (cl-loop for buffer in (company-nihongo-group--get-group-members group-name)
