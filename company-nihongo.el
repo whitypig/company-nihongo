@@ -55,8 +55,7 @@ and returns a list of buffers to use when collecting candidates."
   :group 'company-nihongo)
 
 (defcustom company-nihongo-mode-group-list
-  '((emacs-lisp-mode lisp-interaction-mode)
-    (python-mode inferior-python-mode))
+  '((emacs-lisp-mode lisp-interaction-mode))
   ""
   :type 'list
   :group 'company-nihongo)
@@ -160,6 +159,10 @@ that buffer belongs.")
 
 (defvar company-nihongo--friend-buffers-table (make-hash-table :test #'eq)
   "")
+
+(defvar company-nihongo--source-buffers-cache '()
+  "List for managing source buffers. car part of this is the currently
+edting buffer and cdr is a list of source buffers")
 
 ;;; Functions
 
@@ -314,15 +317,29 @@ of `char-before'."
     ;; OTHERS being nil has the highest priority. In this case, BUFFER
     ;; is the only source buffer.
     (list buffer))
+   ((eq buffer (car company-nihongo--source-buffers-cache))
+    ;; Experimental: This case means that this function must have been
+    ;; called in this editing session for BUFFER a few moment
+    ;; ago. Therefore, we do not have to search for source buffers
+    ;; because current buffer must not have switched to another buffer
+    ;; for editing purpose since the last call. Although there could a
+    ;; chance where an external program or any other elisp has visited
+    ;; a file which should be one of source buffers for BUFFER, I bet
+    ;; that case rarely happens.
+    (cdr company-nihongo--source-buffers-cache))
    (t
     ;; If BUFFER belongs to any groups, collect all the buffers in
     ;; those groups. Otherwise, just call
     ;; 'company-nihongo-select-buffer-function.
     (cl-loop for fn in company-nihongo-select-buffer-function-list
              with buffers = nil
+             with ret = nil
              append (funcall fn buffer) into buffers
-             finally return
-             (cl-remove-duplicates buffers)))))
+             finally
+             do (progn
+                  (setq ret (cl-remove-duplicates buffers))
+                  (setq company-nihongo--source-buffers-cache (cons buffer ret))
+                  (cl-return ret))))))
 
 (cl-defun company-nihongo--get-candidates (prefix &optional (others t))
   "Return a list of candidates that begin with prefix PREFIX."
@@ -1117,6 +1134,9 @@ there is an entry for a killed bufer, and delete it if any."
                     (buffer-name (current-buffer))
                     (buffer-file-name (current-buffer)))))
 
+(defun company-nihongo--groups-exist-p ()
+  (not (zerop (hash-table-count company-nihongo--group-name-to-buffers-table))))
+
 (defun company-nihongo-make-group (name this-buffer buffers)
   "Create a group of buffers. All buffers in a group are associated
 with each other. This means that when performing completion while
@@ -1149,25 +1169,30 @@ buffer."
                          (cons name
                                (gethash buf company-nihongo--buffer-to-group-table))
                          company-nihongo--buffer-to-group-table))
+    (company-nihongo--clear-source-buffers-cache this-buffer)
     (message "Created group %s with (%s)"
              name
              (mapconcat (lambda (b) (buffer-name b))
                         (gethash name company-nihongo--group-name-to-buffers-table)
                         ", "))))
 
-(defun company-nihongo-add-buffers-to-group (group-name buffers)
+(defun company-nihongo-add-buffers-to-group (buffer group-name buffers)
   "Add buffers into a company-nihongo buffer group."
-  (interactive (list (company-nihongo--helm-select-group "Group name: ")
-                     (company-nihongo--helm-select-buffers)))
-  (cl-loop for buffer in buffers
-           do (company-nihongo-group-join-group buffer group-name)
-           finally (message "Now, group %s is (%s)"
-                            group-name
-                            (mapconcat
-                             #'buffer-name
-                             (gethash group-name
-                                      company-nihongo--group-name-to-buffers-table)
-                             ", "))))
+  (interactive (list (current-buffer)
+                     (and (company-nihongo--groups-exist-p)
+                          (company-nihongo--helm-select-group "Group name: "))
+                     (and (company-nihongo--groups-exist-p)
+                          (company-nihongo--helm-select-buffers))))
+  (when (and group-name buffers)
+    (cl-loop for buf in buffers
+             do (company-nihongo-join-group buf group-name)
+             finally (message "Now, group %s is (%s)"
+                              group-name
+                              (mapconcat
+                               #'buffer-name
+                               (gethash group-name
+                                        company-nihongo--group-name-to-buffers-table)
+                               ", ")))))
 
 (defun company-nihongo-join-group (buffer group-name)
   "Join group named GROUP-NAME, which means that current buffer becomes a
@@ -1199,7 +1224,8 @@ member of the group whose name is NAME."
     (when (and (called-interactively-p 'interactive)
                (company-nihongo-group--group-member-p buffer group-name))
       (message "Buffer %s has become a member of %s"
-                (buffer-name buffer) group-name)))))
+               (buffer-name buffer) group-name))
+    (company-nihongo--clear-source-buffers-cache buffer))))
 
 (defun company-nihongo-group--group-member-p (buffer group-name)
   (member group-name
@@ -1233,22 +1259,6 @@ member of the group whose name is NAME."
                      :migemo t
                      :volatile t)))))
 
-(defun company-nihongo-group--leave-group (buffer group-name)
-  (puthash buffer (remove group-name
-                          (gethash buffer
-                                   company-nihongo--buffer-to-group-table))
-           company-nihongo--buffer-to-group-table)
-  (puthash group-name
-           (remove buffer
-                   (gethash group-name
-                            company-nihongo--group-name-to-buffers-table))
-           company-nihongo--group-name-to-buffers-table))
-
-(defun company-nihongo-group--reset-groups ()
-  (interactive)
-  (clrhash company-nihongo--group-name-to-buffers-table)
-  (clrhash company-nihongo--buffer-to-group-table))
-
 (defun company-nihongo-leave-group (buffer group-name)
   "Leave group name GROUP-NAME."
   (interactive (list (current-buffer)
@@ -1276,7 +1286,8 @@ member of the group whose name is NAME."
               (buffer-name buffer)
               (mapconcat #'identity
                          (gethash buffer company-nihongo--buffer-to-group-table)
-                         ", "))))))
+                         ", ")))
+    (company-nihongo--clear-source-buffers-cache buffer))))
 
 (defun company-nihongo-group-delete-buffers-in-group (group-name &optional del-buffers)
   "Delete BUFFERS from group named GROUP-NAME."
@@ -1295,7 +1306,7 @@ member of the group whose name is NAME."
                                    company-nihongo--group-name-to-buffers-table))
            for b in del-buffers
            do (progn
-                (company-nihongo-group--leave-group b group-name)
+                (company-nihongo-leave-group b group-name)
                 (cl-incf cnt))
            finally (and (> cnt 0)
                         (message "Deleted %s from %s"
@@ -1320,6 +1331,7 @@ member of the group whose name is NAME."
     (cl-loop for group-name in group-names
              do (progn
                   (company-nihongo-group--delete-group group-name)
+                  (company-nihongo--clear-source-buffers-cache (current-buffer))
                   (and (called-interactively-p 'interactive)
                        (message "Deleted group %s" group-name)))))))
 
@@ -1366,10 +1378,6 @@ itself. Otherwise return nil."
                                      (remove buffer
                                              (cl-remove-duplicates ret))))))
 
-(defun company-nihongo--clear-group-tables ()
-  (clrhash company-nihongo--group-name-to-buffers-table)
-  (clrhash company-nihongo--buffer-to-group-table))
-
 ;;; Friend buffers management
 
 ;; Assume that bufferA has friend buffers (bufferB bufferC bufferD).
@@ -1385,6 +1393,14 @@ itself. Otherwise return nil."
 ;; source buffers for completion in bufferA, but does not necessarily
 ;; mean that bufferA is a source buffer for bufferB, buferC, or
 ;; bufferD.
+
+(defun company-nihongo--clear-source-buffers-cache (buffer)
+  "Clear cache if `company-nihongo--source-buffers-cache' is holding
+   source buffers for BUFFER. This situation occurs when friend
+   buffers for BUFFER have been changed or a new buffer group has been
+   created."
+  (when (eq buffer (car company-nihongo--source-buffers-cache))
+    (setq company-nihongo--source-buffers-cache nil)))
 
 (defun company-nihongo--get-friend-buffers (buffer)
   (gethash buffer company-nihongo--friend-buffers-table nil))
@@ -1409,38 +1425,46 @@ from which this command has been invoked."
                                (gethash key-buffer
                                         company-nihongo--friend-buffers-table))
                               company-nihongo--friend-buffers-table)
+                     (company-nihongo--clear-source-buffers-cache buffer)
                      (message "Current friends: %s"
                               (mapconcat #'buffer-name
                                          (company-nihongo--get-friend-buffers
                                           (current-buffer))
                                          ", ")))))
 
-(defun company-nihongo-delete-friend-buffers (buffers)
-  "Break up with BUFFERS."
+(defun company-nihongo-delete-friend-buffers (buffer delete-buffers)
+  "Delete buffers from friend buffers of buffers."
   (interactive (list
-                (and (company-nihongo--get-friend-buffers (current-buffer))
+                (current-buffer)
+                (and (company-nihongo--get-friend-buffers buffer)
                      (company-nihongo--helm-select-buffers
-                      (company-nihongo--get-friend-buffers (current-buffer))))))
-  (if (null buffers)
+                      (company-nihongo--get-friend-buffers buffer)))))
+  (if (null delete-buffers)
       (message "There is no friend buffer to break up with")
     (let ((new-friends (cl-set-difference
-                        (company-nihongo--get-friend-buffers (current-buffer))
-                        buffers)))
-      (puthash (current-buffer)
+                        (company-nihongo--get-friend-buffers buffer)
+                        delete-buffers)))
+      (puthash buffer
                new-friends
                company-nihongo--friend-buffers-table)
+      (company-nihongo--clear-source-buffers-cache buffer)
       (message "%s"
-               (if (null (company-nihongo--get-friend-buffers (current-buffer)))
+               (if (null (company-nihongo--get-friend-buffers buffer))
                    "Now, we have become alone"
                  (format "Current friends: %s"
                          (mapconcat #'buffer-name
                                     (company-nihongo--get-friend-buffers
-                                     (current-buffer))
+                                     buffer)
                                     ", ")))))))
 
 (defun company-nihongo--reset-friend-buffers-table ()
   (interactive)
   (clrhash company-nihongo--friend-buffers-table))
+
+(defun company-nihongo-group--reset-groups ()
+  (interactive)
+  (clrhash company-nihongo--group-name-to-buffers-table)
+  (clrhash company-nihongo--buffer-to-group-table))
 
 (defun company-nihongo--clear-tables-for-buffer (buffer)
   (remhash buffer company-nihongo--last-edit-tick-table)
@@ -1457,6 +1481,9 @@ from which this command has been invoked."
                                   candidate)))
     (ignore-errors (company-begin-backend 'company-nihongo))))
 
+(defun company-nihongo--annotation (candidate)
+  " <JP>")
+
 (defun company-nihongo (command &optional arg &rest _ignores)
   (interactive (list 'interactive))
   (cl-case command
@@ -1466,6 +1493,8 @@ from which this command has been invoked."
      (company-nihongo--get-prefix))
     (candidates
      (company-nihongo--get-candidates arg))
+    (annotation
+     (company-nihongo--annotation arg))
     (sorted t)
     (post-completion
      (company-nihongo--try-consecutive-completion arg))))
@@ -1479,6 +1508,8 @@ from which this command has been invoked."
      (company-nihongo--get-prefix))
     (candidates
      (company-nihongo--get-candidates arg nil))
+    (annotation
+     (company-nihongo--annotation arg))
     (sorted t)))
 
 (defun company-nihongo-current-buffer-activate ()
