@@ -164,6 +164,17 @@ that buffer belongs.")
   "List for managing source buffers. car part of this is the currently
 edting buffer and cdr is a list of source buffers")
 
+(defconst company-nihongo--ignore-buffer-regexp-list
+  '("\\` " "\\`\\*Echo Area" "\\`\\*Minibuf" "\\`\\*helm"
+    "\\`\\*Messages\\*\\'" "\\`\\*Backtrace\\*\\'" "\\`\\*Compile-Log\\*\\'")
+  "")
+
+(defconst company-nihongo--ignore-buffer-regexp
+  (mapconcat (lambda (reg) (format "\\(?:%s\\)" reg))
+             company-nihongo--ignore-buffer-regexp-list
+             "\\|")
+  "")
+
 ;;; Functions
 
 (defun company-nihongo-compare-candidates (a b)
@@ -1112,12 +1123,18 @@ there is an entry for a killed bufer, and delete it if any."
                     ;; value is buffer object.
                     (nth 0 elt))))
 
+(defun company-nihongo--buffer-directory-p (buffer)
+  ;; Todo: Really need this?
+  nil)
+
+(defun company-nihongo--ignore-buffer-name-p (name)
+  (string-match-p company-nihongo--ignore-buffer-regexp name))
+
 (defun company-nihongo--buffer-list ()
   (cl-remove-if (lambda (buffer)
                   (or (not (buffer-live-p buffer))
-                      (cl-some (lambda (reg)
-                                 (string-match-p reg (buffer-name buffer)))
-                               '("^ " "^\\*[Hh]elm.*\\*$"))
+                      (company-nihongo--buffer-directory-p buffer)
+                      (company-nihongo--ignore-buffer-name-p (buffer-name buffer))
                       (member (buffer-local-value 'major-mode buffer)
                               '(help-mode))))
                 (buffer-list)))
@@ -1425,7 +1442,7 @@ from which this command has been invoked."
                                (gethash key-buffer
                                         company-nihongo--friend-buffers-table))
                               company-nihongo--friend-buffers-table)
-                     (company-nihongo--clear-source-buffers-cache buffer)
+                     (company-nihongo--clear-source-buffers-cache (current-buffer))
                      (message "Current friends: %s"
                               (mapconcat #'buffer-name
                                          (company-nihongo--get-friend-buffers
