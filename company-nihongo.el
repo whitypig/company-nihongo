@@ -166,7 +166,8 @@ edting buffer and cdr is a list of source buffers")
 
 (defconst company-nihongo--ignore-buffer-regexp-list
   '("\\` " "\\`\\*Echo Area" "\\`\\*Minibuf" "\\`\\*helm"
-    "\\`\\*Messages\\*\\'" "\\`\\*Backtrace\\*\\'" "\\`\\*Compile-Log\\*\\'")
+    "\\`\\*Messages\\*\\'" "\\`\\*Backtrace\\*\\'" "\\`\\*Compile-Log\\*\\'"
+    "~\\'")
   "")
 
 (defconst company-nihongo--ignore-buffer-regexp
@@ -349,7 +350,9 @@ of `char-before'."
              finally
              do (progn
                   (setq ret (cl-remove-duplicates buffers))
-                  (setq company-nihongo--source-buffers-cache (cons buffer ret))
+                  (setq company-nihongo--source-buffers-cache
+                        (cons buffer
+                              (cl-remove-if-not #'buffer-live-p ret)))
                   (cl-return ret))))))
 
 (cl-defun company-nihongo--get-candidates (prefix &optional (others t))
@@ -360,6 +363,7 @@ of `char-before'."
                                                                     :others others)
                     with limit = (or company-nihongo-limit
                                      20)
+                    when (buffer-live-p buf)
                     nconc (company-nihongo--get-candidates-1 prefix buf) into candidates
                     when (and (integerp limit)
                               (> (length candidates) company-nihongo-limit))
@@ -1499,7 +1503,7 @@ from which this command has been invoked."
     (ignore-errors (company-begin-backend 'company-nihongo))))
 
 (defun company-nihongo--annotation (candidate)
-  " <JP>")
+  "  [JP]")
 
 (defun company-nihongo (command &optional arg &rest _ignores)
   (interactive (list 'interactive))
