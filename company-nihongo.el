@@ -60,7 +60,7 @@ and returns a list of buffers to use when collecting candidates."
   :type 'list
   :group 'company-nihongo)
 
-(defcustom company-nihongo-ascii-regexp "[0-9A-Za-z_:-]"
+(defcustom company-nihongo-ascii-regexp "[0-9A-Za-z_:&-]"
   "Regexp used to search for candidates that are not multibyte strings."
   :type 'regexp
   :group 'company-nihongo)
@@ -820,7 +820,14 @@ table, and store it in `company-nihongo--index-cache-alist'."
                                                  (end (point-max)))
   "Split buffer string by the type of character and return a list of
 would-be candidates."
-  (cl-loop with lst = (company-nihongo--split-buffer-string buffer :beg beg :end end)
+  (cl-loop with s-table = (let ((table (copy-syntax-table (syntax-table))))
+                            ;; Make "&" a word-constituent
+                            (modify-syntax-entry ?& "w" table)
+                            table)
+           with lst = (company-nihongo--split-buffer-string buffer
+                                                            :beg beg
+                                                            :end end
+                                                            :syntax-table s-table)
            with ret = nil
            with sep-regexp = (format "^%s$" company-nihongo-separator-regexp)
            with acc = nil
@@ -858,6 +865,9 @@ would-be candidates."
                         (company-nihongo--get-substrings-by-separators
                          curr (format "[%s]+" company-nihongo--black-dot))))
                  ((string-match-p (format "%s+" company-nihongo-ascii-regexp) curr)
+                  ;; Split ascii word by separator, i.e. split
+                  ;; "abc-def-ghi" by "-".
+                  ;; (message "DEBUG: curr=%s" curr)
                   (mapc (lambda (s)
                           (push s ret))
                         (company-nihongo--get-substrings-by-separators
@@ -929,7 +939,8 @@ candidate."
 
 (cl-defun company-nihongo--split-buffer-string (buffer &key
                                                        (beg (point-min))
-                                                       (end (point-max)))
+                                                       (end (point-max))
+                                                       (syntax-table (syntax-table)))
   "Return a list of strings in buffer BUFFER, split by its character
 type."
   (let ((ret nil)
@@ -945,36 +956,44 @@ type."
                                  nil
                                (1+ (point))))))
     (with-current-buffer buffer
-      (save-excursion (goto-char beg)
-                      ;; avoid situations where we are in the middle
-                      ;; of some word, i.e.
-                      ;; match-string-no-properties
-                      ;;        ^
-                      ;;        |
-                      ;;      (point)
-                      (backward-word-strictly)
-                      (while (re-search-forward regexp end t)
-                        (setq word (match-string-no-properties 0))
-                        (cond
-                         ((string-match-p company-nihongo--two-black-dots word)
-                          (mapc (lambda (elt)
-                                  (push elt ret))
-                                (company-nihongo--split-string
-                                 word
-                                 (format "[%s]\\{2,\\}"
-                                         company-nihongo--black-dot))))
-                         (t
-                          (push word ret))))))
+      (with-syntax-table syntax-table
+        (save-excursion (goto-char beg)
+                        ;; avoid situations where we are in the middle
+                        ;; of some word, i.e.
+                        ;; match-string-no-properties
+                        ;;        ^
+                        ;;        |
+                        ;;      (point)
+                        (backward-word-strictly)
+                        (while (re-search-forward regexp end t)
+                          (setq word (match-string-no-properties 0))
+                          (cond
+                           ((string-match-p company-nihongo--two-black-dots word)
+                            (mapc (lambda (elt)
+                                    (push elt ret))
+                                  (company-nihongo--split-string
+                                   word
+                                   (format "[%s]\\{2,\\}"
+                                           company-nihongo--black-dot))))
+                           (t
+                            (push word ret)))))))
     (nreverse ret)))
 
 (defun company-nihongo--get-substrings-by-separators (string separator)
-  (cl-loop with lst = (company-nihongo--split-string string separator)
-           for i from 0 below (length lst)
-           for l = (nthcdr i lst)
-           unless (string-match-p separator (car l))
-           append (cl-loop for elt in l
-                           for s = elt then (concat s elt)
-                           collect s)))
+  (cond
+   ((and (string-match (format "\\`%s\\(.*\\)\\'" separator) string)
+         (not (string-match-p separator (match-string 1 string))))
+    ;; Cases for string begin "&optional", "&rest", ":key", and etc."
+    (list string (match-string 1 string)))
+   (t
+    (cl-loop with lst = (company-nihongo--split-string string separator)
+             with ret = nil
+             for i from 0 below (length lst)
+             for l = (nthcdr i lst)
+             unless (string-match-p separator (car l))
+             append (cl-loop for elt in l
+                             for s = elt then (concat s elt)
+                             collect s)))))
 
 (defun company-nihongo--split-string (string separator)
   "Split STRING by SEPARATOR, which can be a regexp, and return a list

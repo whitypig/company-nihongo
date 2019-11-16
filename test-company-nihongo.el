@@ -59,9 +59,10 @@
               '("されているので")))
       ;; Should we forbid that "うになっているはずである" is collected
       ;; as a candidate?
-      (should
-       (equal (company-nihongo--get-candidates-in-current-buffer "う")
-              '("うになっているはずである")))
+      ;; No, because 「う」 is not at the beginning of split word.
+      ;; (should
+      ;;  (equal (company-nihongo--get-candidates-in-current-buffer "う")
+      ;;         '("うになっているはずである")))
       (should
        (null (company-nihongo--get-candidates-in-current-buffer "する")))
       (company-nihongo--clear-tables-for-buffer (current-buffer)))
@@ -162,6 +163,27 @@
        (equal (company-nihongo--split-buffer-string (current-buffer))
               '("abc-def-ghi-"))))))
 
+(ert-deftest company-nihongo--test-split-buffer-string-for-ampersand$ ()
+  (with-temp-buffer
+    (insert "cl-defun company-nihongo--get-candidates (prefix &optional (others t))")
+    (let* ((company-nihongo-ascii-regexp "[0-9A-Za-z_:&-]")
+           (lst nil)
+           (regexp (format "\\cH+\\|\\cK+\\|\\cC+\\|%s+\\|%s"
+                           company-nihongo-ascii-regexp
+                           company-nihongo-separator-regexp))
+           (s "&optional")
+           (expected-strings '("cl-defun" " " "company-nihongo--get-candidates"
+                               " ("
+                               "prefix"
+                               " "
+                               "&optional" " (" "others" " " "t" "))"))
+           (table (copy-syntax-table)))
+      (modify-syntax-entry ?& "w" table)
+      (setq lst (company-nihongo--split-buffer-string (current-buffer) :syntax-table table))
+      (message "DEBUG: (aref (syntax-table) ?&)=%s" (aref (syntax-table) ?&))
+      (cl-loop for elt in expected-strings
+               do (should (member elt lst))))))
+
 ;; (cl-loop for word in (company-nihongo--get-word-list (current-buffer))
 ;;          do (message "word=%s" word))
 
@@ -227,6 +249,20 @@
             '("abc" "abc--" "abc--def" "abc--def::" "abc--def::ghi"
               "def" "def::" "def::ghi"
               "ghi")))))
+
+(ert-deftest company-nihongo--test-get-word-list-for-ampersand$ ()
+  (with-temp-buffer
+    (insert "cl-defun company-nihongo--get-candidates (prefix &optional (others t))")
+    (let* ((company-nihongo-ascii-regexp "[0-9A-Za-z_:&-]")
+           (company-nihongo--ascii-non-alpha "[:_&-]")
+           (lst (company-nihongo--get-word-list (current-buffer))))
+      ;; (message "DEBUG: lst=%s" (concat "|"
+      ;;                                  (mapconcat #'identity
+      ;;                                             lst
+      ;;                                             "|")
+      ;;                                  "|"))
+      (should (member "optional" lst))
+      (should (member "&optional" lst)))))
 
 (ert-deftest company-nihongo--test-make-regexp$ ()
   (cl-flet ((get-regexp (prefix)
@@ -326,170 +362,170 @@
              "ああああああああああああああいい" "dir")
             "ああああああああああああああいい                      (dir)")))
 
-(ert-deftest company-nihongo-group--test-create-new-group$ ()
-  (let* ((company-nihongo--group-name-to-buffers-table (make-hash-table :test #'equal))
-         (company-nihongo--buffer-to-group-table (make-hash-table :test #'equal))
-         (name "test-group1")
-         (buffers (cl-loop for i from 0 to 2
-                           collect (get-buffer-create
-                                    (format "*test-company-nihongo-%d*" i))))
-         (buf (get-buffer-create "*test-company-nihongo-current-buffer*"))
-         (all-buffers (cons buf buffers)))
-    (company-nihongo-group-create-new-group name buf buffers)
-    (should (null (cl-set-difference
-                   (gethash name company-nihongo--group-name-to-buffers-table)
-                   all-buffers)))
-    (should (member name (gethash buf company-nihongo--buffer-to-group-table)))
-    (cl-loop for b in buffers
-             do (should (null (gethash b company-nihongo--buffer-to-group-table))))
-    (cl-loop for b in all-buffers
-             do (should (member b (gethash name
-                                           company-nihongo--group-name-to-buffers-table))))
-    ;; clean ups
-    (mapc #'kill-buffer all-buffers)))
+;; (ert-deftest company-nihongo-group--test-create-new-group$ ()
+;;   (let* ((company-nihongo--group-name-to-buffers-table (make-hash-table :test #'equal))
+;;          (company-nihongo--buffer-to-group-table (make-hash-table :test #'equal))
+;;          (name "test-group1")
+;;          (buffers (cl-loop for i from 0 to 2
+;;                            collect (get-buffer-create
+;;                                     (format "*test-company-nihongo-%d*" i))))
+;;          (buf (get-buffer-create "*test-company-nihongo-current-buffer*"))
+;;          (all-buffers (cons buf buffers)))
+;;     (company-nihongo-group-create-new-group name buf buffers)
+;;     (should (null (cl-set-difference
+;;                    (gethash name company-nihongo--group-name-to-buffers-table)
+;;                    all-buffers)))
+;;     (should (member name (gethash buf company-nihongo--buffer-to-group-table)))
+;;     (cl-loop for b in buffers
+;;              do (should (null (gethash b company-nihongo--buffer-to-group-table))))
+;;     (cl-loop for b in all-buffers
+;;              do (should (member b (gethash name
+;;                                            company-nihongo--group-name-to-buffers-table))))
+;;     ;; clean ups
+;;     (mapc #'kill-buffer all-buffers)))
 
-(ert-deftest company-nihongo-group--test-create-new-group-multiple-group$ ()
-  (let* ((company-nihongo--group-name-to-buffers-table (make-hash-table :test #'equal))
-         (company-nihongo--buffer-to-group-table (make-hash-table :test #'equal))
-         (name1 "test-group1")
-         (name2 "test-group2")
-         (buffers (cl-loop for i from 0 to 2
-                           collect (get-buffer-create
-                                    (format "*b%d*" i))))
-         (buf (get-buffer-create "*this-buffer*"))
-         (another-buffers (cl-loop for i from 0 to 2
-                                   collect (get-buffer-create
-                                            (format "*another%d*" i))))
-         (all-buffers (append (list buf) buffers another-buffers)))
-    (company-nihongo-group-create-new-group name1 buf buffers)
-    (company-nihongo-group-create-new-group name2 buf another-buffers)
-    (should (member name1 (gethash buf company-nihongo--buffer-to-group-table)))
-    (should (member name2 (gethash buf company-nihongo--buffer-to-group-table)))
-    (cl-loop with members = (company-nihongo--get-source-buffers buf t)
-             for b in (append buffers another-buffers)
-             do (should (member b members)))
-    (mapc #'kill-buffer all-buffers)))
+;; (ert-deftest company-nihongo-group--test-create-new-group-multiple-group$ ()
+;;   (let* ((company-nihongo--group-name-to-buffers-table (make-hash-table :test #'equal))
+;;          (company-nihongo--buffer-to-group-table (make-hash-table :test #'equal))
+;;          (name1 "test-group1")
+;;          (name2 "test-group2")
+;;          (buffers (cl-loop for i from 0 to 2
+;;                            collect (get-buffer-create
+;;                                     (format "*b%d*" i))))
+;;          (buf (get-buffer-create "*this-buffer*"))
+;;          (another-buffers (cl-loop for i from 0 to 2
+;;                                    collect (get-buffer-create
+;;                                             (format "*another%d*" i))))
+;;          (all-buffers (append (list buf) buffers another-buffers)))
+;;     (company-nihongo-group-create-new-group name1 buf buffers)
+;;     (company-nihongo-group-create-new-group name2 buf another-buffers)
+;;     (should (member name1 (gethash buf company-nihongo--buffer-to-group-table)))
+;;     (should (member name2 (gethash buf company-nihongo--buffer-to-group-table)))
+;;     (cl-loop with members = (company-nihongo--get-source-buffers buf t)
+;;              for b in (append buffers another-buffers)
+;;              do (should (member b members)))
+;;     (mapc #'kill-buffer all-buffers)))
 
-(ert-deftest company-nihongo-group--test-create-new-group-associate-all$ ()
-  (let* ((company-nihongo--group-name-to-buffers-table (make-hash-table :test #'equal))
-         (company-nihongo--buffer-to-group-table (make-hash-table :test #'equal))
-         (name "test-group1")
-         (buffers (cl-loop for i from 0 to 2
-                           collect (get-buffer-create
-                                    (format "*test-company-nihongo-%d*" i))))
-         (buf (get-buffer-create "*test-company-nihongo-current-buffer"))
-         (all-buffers (cons buf buffers)))
-    (company-nihongo-group-create-new-group-and-associate-all name buf buffers)
-    (should (null (cl-set-difference
-                   (gethash name company-nihongo--group-name-to-buffers-table)
-                   all-buffers)))
-    (cl-loop for b in all-buffers
-             do (should (member name
-                                (gethash buf
-                                         company-nihongo--buffer-to-group-table))))
-    ;; clean ups
-    (mapc #'kill-buffer all-buffers)))
+;; (ert-deftest company-nihongo-group--test-create-new-group-associate-all$ ()
+;;   (let* ((company-nihongo--group-name-to-buffers-table (make-hash-table :test #'equal))
+;;          (company-nihongo--buffer-to-group-table (make-hash-table :test #'equal))
+;;          (name "test-group1")
+;;          (buffers (cl-loop for i from 0 to 2
+;;                            collect (get-buffer-create
+;;                                     (format "*test-company-nihongo-%d*" i))))
+;;          (buf (get-buffer-create "*test-company-nihongo-current-buffer"))
+;;          (all-buffers (cons buf buffers)))
+;;     (company-nihongo-group-create-new-group-and-associate-all name buf buffers)
+;;     (should (null (cl-set-difference
+;;                    (gethash name company-nihongo--group-name-to-buffers-table)
+;;                    all-buffers)))
+;;     (cl-loop for b in all-buffers
+;;              do (should (member name
+;;                                 (gethash buf
+;;                                          company-nihongo--buffer-to-group-table))))
+;;     ;; clean ups
+;;     (mapc #'kill-buffer all-buffers)))
 
-(ert-deftest company-nihongo-group--test-join-group$ ()
-  (let* ((company-nihongo--group-name-to-buffers-table (make-hash-table :test #'equal))
-         (company-nihongo--buffer-to-group-table (make-hash-table :test #'equal))
-         (name "test-group1")
-         (buffers (cl-loop for i from 0 to 2
-                           collect (get-buffer-create
-                                    (format "*test-company-nihongo-%d*" i))))
-         (buf (get-buffer-create "*test-company-nihongo-current-buffer*"))
-         (new-buf (get-buffer-create "*test-company-nihongo-new-buffer*"))
-         (all-buffers (cons new-buf (cons buf buffers))))
-    (company-nihongo-group-create-new-group name buf buffers)
-    (should (null (gethash new-buf company-nihongo--buffer-to-group-table)))
-    (company-nihongo-group--join-group new-buf name)
-    (should (equal (gethash new-buf company-nihongo--buffer-to-group-table)
-                   (list name)))
-    (should (member new-buf (gethash name company-nihongo--group-name-to-buffers-table)))
-    (mapc #'kill-buffer all-buffers)))
+;; (ert-deftest company-nihongo-group--test-join-group$ ()
+;;   (let* ((company-nihongo--group-name-to-buffers-table (make-hash-table :test #'equal))
+;;          (company-nihongo--buffer-to-group-table (make-hash-table :test #'equal))
+;;          (name "test-group1")
+;;          (buffers (cl-loop for i from 0 to 2
+;;                            collect (get-buffer-create
+;;                                     (format "*test-company-nihongo-%d*" i))))
+;;          (buf (get-buffer-create "*test-company-nihongo-current-buffer*"))
+;;          (new-buf (get-buffer-create "*test-company-nihongo-new-buffer*"))
+;;          (all-buffers (cons new-buf (cons buf buffers))))
+;;     (company-nihongo-group-create-new-group name buf buffers)
+;;     (should (null (gethash new-buf company-nihongo--buffer-to-group-table)))
+;;     (company-nihongo-group--join-group new-buf name)
+;;     (should (equal (gethash new-buf company-nihongo--buffer-to-group-table)
+;;                    (list name)))
+;;     (should (member new-buf (gethash name company-nihongo--group-name-to-buffers-table)))
+;;     (mapc #'kill-buffer all-buffers)))
 
-(ert-deftest company-nihongo-group--test-leave-group$ ()
-  (let* ((company-nihongo--group-name-to-buffers-table (make-hash-table :test #'equal))
-         (company-nihongo--buffer-to-group-table (make-hash-table :test #'equal))
-         (name "test-group1")
-         (buffers (cl-loop for i from 0 to 2
-                           collect (get-buffer-create
-                                    (format "*test-company-nihongo-%d*" i))))
-         (buf (get-buffer-create "*test-company-nihongo-current-buffer"))
-         (all-buffers (cons buf buffers)))
-    (company-nihongo-group-create-new-group-and-associate-all name buf buffers)
-    (should (null (cl-set-difference
-                   (gethash name company-nihongo--group-name-to-buffers-table)
-                   all-buffers)))
-    (cl-loop for b in all-buffers
-             do (should (member name
-                                (gethash buf
-                                         company-nihongo--buffer-to-group-table))))
-    ;; Now, buffer buf will leave group.
-    (company-nihongo-group--leave-group buf name)
-    (should (not (member buf (gethash name
-                                      company-nihongo--group-name-to-buffers-table))))
-    (should (not (member name (gethash buf
-                                       company-nihongo--buffer-to-group-table))))
-    ;; clean ups
-    (mapc #'kill-buffer all-buffers)))
+;; (ert-deftest company-nihongo-group--test-leave-group$ ()
+;;   (let* ((company-nihongo--group-name-to-buffers-table (make-hash-table :test #'equal))
+;;          (company-nihongo--buffer-to-group-table (make-hash-table :test #'equal))
+;;          (name "test-group1")
+;;          (buffers (cl-loop for i from 0 to 2
+;;                            collect (get-buffer-create
+;;                                     (format "*test-company-nihongo-%d*" i))))
+;;          (buf (get-buffer-create "*test-company-nihongo-current-buffer"))
+;;          (all-buffers (cons buf buffers)))
+;;     (company-nihongo-group-create-new-group-and-associate-all name buf buffers)
+;;     (should (null (cl-set-difference
+;;                    (gethash name company-nihongo--group-name-to-buffers-table)
+;;                    all-buffers)))
+;;     (cl-loop for b in all-buffers
+;;              do (should (member name
+;;                                 (gethash buf
+;;                                          company-nihongo--buffer-to-group-table))))
+;;     ;; Now, buffer buf will leave group.
+;;     (company-nihongo-group--leave-group buf name)
+;;     (should (not (member buf (gethash name
+;;                                       company-nihongo--group-name-to-buffers-table))))
+;;     (should (not (member name (gethash buf
+;;                                        company-nihongo--buffer-to-group-table))))
+;;     ;; clean ups
+;;     (mapc #'kill-buffer all-buffers)))
 
-(ert-deftest company-nihongo-group--test-delete-buffers-in-group$ ()
-  (let* ((company-nihongo--group-name-to-buffers-table (make-hash-table :test #'equal))
-         (company-nihongo--buffer-to-group-table (make-hash-table :test #'equal))
-         (name "test-group1")
-         (buffers (cl-loop for i from 0 to 2
-                           collect (get-buffer-create
-                                    (format "*test-company-nihongo-%d*" i))))
-         (buf (get-buffer-create "*test-company-nihongo-current-buffer"))
-         (all-buffers (cons buf buffers))
-         (del-buffers (mapcar #'get-buffer
-                              '("*test-company-nihongo-0*" "*test-company-nihongo-2*"))))
-    (company-nihongo-group-create-new-group-and-associate-all name buf buffers)
-    (cl-loop for b in del-buffers
-             do (should
-                 (member b (gethash name
-                                    company-nihongo--group-name-to-buffers-table))))
-    (company-nihongo-group-delete-buffers-in-group name del-buffers)
-    (cl-loop for b in del-buffers
-             do (should
-                 (null
-                  (member b (gethash name
-                                     company-nihongo--group-name-to-buffers-table)))))
-    (cl-loop for b in del-buffers
-             do (should
-                 (null (member name
-                               (gethash b company-nihongo--buffer-to-group-table)))))))
+;; (ert-deftest company-nihongo-group--test-delete-buffers-in-group$ ()
+;;   (let* ((company-nihongo--group-name-to-buffers-table (make-hash-table :test #'equal))
+;;          (company-nihongo--buffer-to-group-table (make-hash-table :test #'equal))
+;;          (name "test-group1")
+;;          (buffers (cl-loop for i from 0 to 2
+;;                            collect (get-buffer-create
+;;                                     (format "*test-company-nihongo-%d*" i))))
+;;          (buf (get-buffer-create "*test-company-nihongo-current-buffer"))
+;;          (all-buffers (cons buf buffers))
+;;          (del-buffers (mapcar #'get-buffer
+;;                               '("*test-company-nihongo-0*" "*test-company-nihongo-2*"))))
+;;     (company-nihongo-group-create-new-group-and-associate-all name buf buffers)
+;;     (cl-loop for b in del-buffers
+;;              do (should
+;;                  (member b (gethash name
+;;                                     company-nihongo--group-name-to-buffers-table))))
+;;     (company-nihongo-group-delete-buffers-in-group name del-buffers)
+;;     (cl-loop for b in del-buffers
+;;              do (should
+;;                  (null
+;;                   (member b (gethash name
+;;                                      company-nihongo--group-name-to-buffers-table)))))
+;;     (cl-loop for b in del-buffers
+;;              do (should
+;;                  (null (member name
+;;                                (gethash b company-nihongo--buffer-to-group-table)))))))
 
-(ert-deftest company-nihongo-group--test-delete-group$ ()
-  (let* ((company-nihongo--group-name-to-buffers-table (make-hash-table :test #'equal))
-         (company-nihongo--buffer-to-group-table (make-hash-table :test #'equal))
-         (names (cl-loop for i from 0 to 2
-                         collect (format "group%d" i)))
-         (buffers (cl-loop for i from 0 to 2
-                           collect (get-buffer-create
-                                    (format "*test-company-nihongo-%d*" i))))
-         (buf (get-buffer-create "*test-company-nihongo-current-buffer"))
-         (all-buffers (cons buf buffers))
-         (del-groups '("group2" "group3")))
-    (cl-loop for name in names
-             do (company-nihongo-group-create-new-group-and-associate-all
-                 name buf buffers))
-    (should (= (hash-table-count company-nihongo--group-name-to-buffers-table)
-               3))
-    (company-nihongo-group-delete-group del-groups)
-    (cl-loop for name in del-groups
-             do (should
-                 (null (gethash name
-                                company-nihongo--group-name-to-buffers-table))))
-    (cl-loop for b in all-buffers
-             do (cl-loop for g in del-groups
-                         do (should
-                             (null
-                              (member g
-                                      (gethash b
-                                               company-nihongo--buffer-to-group-table))))))
-    (mapc #'kill-buffer all-buffers)))
+;; (ert-deftest company-nihongo-group--test-delete-group$ ()
+;;   (let* ((company-nihongo--group-name-to-buffers-table (make-hash-table :test #'equal))
+;;          (company-nihongo--buffer-to-group-table (make-hash-table :test #'equal))
+;;          (names (cl-loop for i from 0 to 2
+;;                          collect (format "group%d" i)))
+;;          (buffers (cl-loop for i from 0 to 2
+;;                            collect (get-buffer-create
+;;                                     (format "*test-company-nihongo-%d*" i))))
+;;          (buf (get-buffer-create "*test-company-nihongo-current-buffer"))
+;;          (all-buffers (cons buf buffers))
+;;          (del-groups '("group2" "group3")))
+;;     (cl-loop for name in names
+;;              do (company-nihongo-group-create-new-group-and-associate-all
+;;                  name buf buffers))
+;;     (should (= (hash-table-count company-nihongo--group-name-to-buffers-table)
+;;                3))
+;;     (company-nihongo-group-delete-group del-groups)
+;;     (cl-loop for name in del-groups
+;;              do (should
+;;                  (null (gethash name
+;;                                 company-nihongo--group-name-to-buffers-table))))
+;;     (cl-loop for b in all-buffers
+;;              do (cl-loop for g in del-groups
+;;                          do (should
+;;                              (null
+;;                               (member g
+;;                                       (gethash b
+;;                                                company-nihongo--buffer-to-group-table))))))
+;;     (mapc #'kill-buffer all-buffers)))
 
 (ert-deftest company-nihongo--test-split-string$ ()
   (should
@@ -506,7 +542,10 @@
           '("this" "_" "is" "__" "a" "___" "word")))
   (should
    (equal (company-nihongo--split-string "アイ・ウエ・・オ" "[・]\\{2,\\}")
-          '("アイ・ウエ" "・・" "オ"))))
+          '("アイ・ウエ" "・・" "オ")))
+  (should
+   (equal (company-nihongo--split-string "&optional" "&")
+          '("&" "optional"))))
 
 (ert-deftest company-nihongo--test-get-substrings-by-separators$ ()
   (should
@@ -543,7 +582,19 @@
            "アイ・ウエ・・オ" "[・]+")
           '("アイ" "アイ・" "アイ・ウエ" "アイ・ウエ・・" "アイ・ウエ・・オ"
             "ウエ" "ウエ・・" "ウエ・・オ"
-            "オ"))))
+            "オ")))
+  )
+
+(ert-deftest company-nihongo--test-get-substrings-by-separators-for-ampersand$ ()
+  (should
+   (equal (company-nihongo--get-substrings-by-separators "abc&optional" "&")
+          '("abc" "abc&" "abc&optional" "optional")))
+  (should
+   (equal (company-nihongo--get-substrings-by-separators "&optional&foo" "[&]+")
+          '("optional" "optional&" "optional&foo" "foo")))
+  (should
+   (equal (company-nihongo--get-substrings-by-separators "&optional" "[&]+")
+          '("&optional" "optional"))))
 
 (ert-deftest company-nihongo--test-make-friend-buffers$ ()
   (let ((company-nihongo--friend-buffers-table (make-hash-table :test #'eq))
@@ -561,25 +612,25 @@
               (sort friends #'sorter)))
       (mapc #'kill-buffer (append (list buf) friends)))))
 
-(ert-deftest company-nihongo--test-delete-friend-buffers$ ()
-  (let ((company-nihongo--friend-buffers-table (make-hash-table :test #'eq))
-        (buf (get-buffer-create "*company-nihongo-its-me-bro*"))
-        (friends
-         (cl-loop for i from 1 to 3
-                  collect
-                  (get-buffer-create (format "*company-nihongo-friend%d*" i)))))
-    (cl-flet ((sorter (lambda (a b)
-                        (string< (buffer-name a) (buffer-name b)))))
-      (with-current-buffer buf
-        (company-nihongo-make-friend-buffers friends)
-        ;; break up with friend2 and friend3.
-        (company-nihongo-delete-friend-buffers (cdr friends))
-        (should
-         (equal (sort (company-nihongo--get-friend-buffers buf) #'sorter)
-                (sort (append (list (car friends))) #'sorter)))
-        ;; then also break up with friend1.
-        (company-nihongo-delete-friend-buffers
-         (list (get-buffer-create "*company-nihongo-friend1*")))
-        (should
-         (null (company-nihongo--get-friend-buffers (current-buffer)))))
-      (mapc #'kill-buffer (append (list buf) friends)))))
+;; (ert-deftest company-nihongo--test-delete-friend-buffers$ ()
+;;   (let ((company-nihongo--friend-buffers-table (make-hash-table :test #'eq))
+;;         (buf (get-buffer-create "*company-nihongo-its-me-bro*"))
+;;         (friends
+;;          (cl-loop for i from 1 to 3
+;;                   collect
+;;                   (get-buffer-create (format "*company-nihongo-friend%d*" i)))))
+;;     (cl-flet ((sorter (lambda (a b)
+;;                         (string< (buffer-name a) (buffer-name b)))))
+;;       (with-current-buffer buf
+;;         (company-nihongo-make-friend-buffers friends)
+;;         ;; break up with friend2 and friend3.
+;;         (company-nihongo-delete-friend-buffers (cdr friends))
+;;         (should
+;;          (equal (sort (company-nihongo--get-friend-buffers buf) #'sorter)
+;;                 (sort (append (list (car friends))) #'sorter)))
+;;         ;; then also break up with friend1.
+;;         (company-nihongo-delete-friend-buffers
+;;          (list (get-buffer-create "*company-nihongo-friend1*")))
+;;         (should
+;;          (null (company-nihongo--get-friend-buffers (current-buffer)))))
+;;       (mapc #'kill-buffer (append (list buf) friends)))))
