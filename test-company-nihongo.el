@@ -184,6 +184,22 @@
       (cl-loop for elt in expected-strings
                do (should (member elt lst))))))
 
+(ert-deftest company-nihongo--test-split-buffer-string-for-colon$ ()
+  (with-temp-buffer
+    (insert "with lst = (company-nihongo--split-buffer-string buffer
+                                                            :beg beg
+                                                            :end end
+                                                            :syntax-table s-table)")
+    (let* ((lst nil)
+           (expected-strings '("with" "lst" " = (" "company-nihongo--split-buffer-string"
+                               "buffer" " " ":beg" " " "beg" ":end" " " "end"
+                               ":syntax-table" " " "s-table"))
+           (table (copy-syntax-table (syntax-table))))
+      (modify-syntax-entry ?: "w" table)
+      (setq lst (company-nihongo--split-buffer-string (current-buffer) :syntax-table table))
+      (cl-loop for elt in expected-strings
+               do (should (member elt lst))))))
+
 ;; (cl-loop for word in (company-nihongo--get-word-list (current-buffer))
 ;;          do (message "word=%s" word))
 
@@ -253,16 +269,23 @@
 (ert-deftest company-nihongo--test-get-word-list-for-ampersand$ ()
   (with-temp-buffer
     (insert "cl-defun company-nihongo--get-candidates (prefix &optional (others t))")
-    (let* ((company-nihongo-ascii-regexp "[0-9A-Za-z_:&-]")
-           (company-nihongo--ascii-non-alpha "[:_&-]")
-           (lst (company-nihongo--get-word-list (current-buffer))))
-      ;; (message "DEBUG: lst=%s" (concat "|"
-      ;;                                  (mapconcat #'identity
-      ;;                                             lst
-      ;;                                             "|")
-      ;;                                  "|"))
+    (let* ((lst (company-nihongo--get-word-list (current-buffer))))
+      (cl-loop for elt in lst
+               do (message "DEBUG: word=|%s|" elt))
       (should (member "optional" lst))
       (should (member "&optional" lst)))))
+
+(ert-deftest company-nihongo--test-get-word-list-for-colon$ ()
+  (with-temp-buffer
+    (insert "with lst = (company-nihongo--split-buffer-string buffer
+                                                            :beg beg
+                                                            :end end
+                                                            :syntax-table s-table)")
+    (let* ((lst (company-nihongo--get-word-list (current-buffer))))
+      (cl-loop for elt in lst
+               do (message "DEBUG: word=|%s|" elt))
+      (should (member "beg" lst))
+      (should (member ":beg" lst)))))
 
 (ert-deftest company-nihongo--test-make-regexp$ ()
   (cl-flet ((get-regexp (prefix)

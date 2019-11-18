@@ -116,7 +116,7 @@ completion automatically fires."
 (defvar company-nihongo--alpha-regexp "[A-Za-z]"
   "")
 
-(defvar company-nihongo--ascii-non-alpha "[:_-]"
+(defvar company-nihongo--ascii-non-alpha "[:_&-]"
   "")
 
 (defvar company-nihongo--search-in-current-buffer-state nil
@@ -285,7 +285,8 @@ of `char-before'."
 
 (defun company-nihongo--get-prefix ()
   (let ((regexp (company-nihongo--get-regexp))
-        (pos (point)))
+        (pos (point))
+        (prefix nil))
     (unless regexp
       ;; Clear the last search state.
       (company-nihongo--clear-not-found-state))
@@ -314,7 +315,21 @@ of `char-before'."
           (while (and (not (bobp))
                       (looking-at-p company-nihongo--black-dot))
             (forward-char))))
-        (buffer-substring-no-properties (point) pos)))))
+        (setq prefix (buffer-substring-no-properties (point) pos))
+        (cond
+         ((> (length prefix) 0)
+          prefix)
+         ((and (string= regexp company-nihongo-ascii-regexp)
+               (save-excursion (backward-char)
+                               (looking-at regexp)))
+          ;; Workaround: To use company-nihongo in conjunction with
+          ;; company-capf in a backends like ((company-nihongo
+          ;; company-capf)).  If prefix is "" and char-before matches
+          ;; company-nihongo-ascii-regexp, we treat that character as
+          ;; a prefix for an experiment.
+          (buffer-substring-no-properties (1- (point)) (point)))
+         (t
+          nil))))))
 
 (defun company-nihongo--set-not-found-state (prefix buffer)
   (setq company-nihongo--search-in-current-buffer-state
@@ -357,6 +372,7 @@ of `char-before'."
 
 (cl-defun company-nihongo--get-candidates (prefix &optional (others t))
   "Return a list of candidates that begin with prefix PREFIX."
+  ;; (message "DEBUG: get-candidates, prefix=|%s|" prefix)
   (when (and prefix (> (length prefix) 0))
     (delete-dups
      (sort (cl-loop for buf in (company-nihongo--get-source-buffers (current-buffer)
@@ -821,8 +837,9 @@ table, and store it in `company-nihongo--index-cache-alist'."
   "Split buffer string by the type of character and return a list of
 would-be candidates."
   (cl-loop with s-table = (let ((table (copy-syntax-table (syntax-table))))
-                            ;; Make "&" a word-constituent
+                            ;; Make "&" and ":" word-constituents.
                             (modify-syntax-entry ?& "w" table)
+                            (modify-syntax-entry ?: "w" table)
                             table)
            with lst = (company-nihongo--split-buffer-string buffer
                                                             :beg beg
@@ -1511,7 +1528,7 @@ from which this command has been invoked."
   (remhash buffer company-nihongo--last-edit-start-pos-table)
   (assq-delete-all buffer company-nihongo--index-cache-alist))
 
-(defun company-nihongo--try-consecutive-completion (candidate)
+(defun company-nihongo--do-consecutive-completion (candidate)
   ;; If some conditions are met, call #'company-manual-begin
   ;; interactively.
   (when (and company-nihongo-use-consective-completion
@@ -1519,7 +1536,10 @@ from which this command has been invoked."
              (not (string-match-p (format "^%s+$"
                                           company-nihongo-ascii-regexp)
                                   candidate)))
-    (ignore-errors (company-begin-backend 'company-nihongo))))
+    (ignore-errors
+      (company-begin-backend 'company-nihongo
+                             (lambda (_)
+                               (company-begin-backend 'company-nihongo))))))
 
 (defun company-nihongo--annotation (candidate)
   "  [JP]")
@@ -1537,7 +1557,7 @@ from which this command has been invoked."
      (company-nihongo--annotation arg))
     (sorted t)
     (post-completion
-     (company-nihongo--try-consecutive-completion arg))))
+     (company-nihongo--do-consecutive-completion arg))))
 
 (defun company-nihongo-current-buffer (command &optional arg &rest _ignores)
   (interactive (list 'interactive))
@@ -1595,3 +1615,7 @@ from which this command has been invoked."
 ;; End:
 
 ;; company-nihongo.el ends here.
+
+(provide 'company-nihongo)
+
+;;; company-nihongo.el ends here
